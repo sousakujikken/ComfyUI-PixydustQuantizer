@@ -75,6 +75,8 @@ Here’s a simple workflow example:
 3. Connect the output of the ColorReducerNode to the Pixydust Quantize-2
 4. Save or display the resulting optimized image
 
+Note: The processing speed isn't very fast so far. It takes about 10 seconds (depending on the machine's power) to generate a 512x512 pixel image.
+
 ![Example workflow](workflow.png)
 
 ## License
