@@ -8,7 +8,7 @@ from skimage import color
 
 COLOR_REDUCTION_METHODS = ["Pillow Quantize", "K-Means", "MedianCut"]
 
-class ColorReducerNode:
+class PixydustQuantize1:
     @classmethod
     def INPUT_TYPES(s):
         return {
@@ -22,7 +22,7 @@ class ColorReducerNode:
     RETURN_TYPES = ("IMAGE", "IMAGE", "PALETTE")
     RETURN_NAMES = ("Reduced Color Image", "Palette Preview", "Palette Tensor")
     FUNCTION = "process_image"
-    CATEGORY = "image/✨Pixydust Quantizer"
+    CATEGORY = "image/Pixydust Quantizer🧚✨"
     OUTPUT_NODE = True
 
 
@@ -116,7 +116,7 @@ class ColorReducerNode:
         return Image.fromarray(reduced_image), final_palette_colors
 
 
-class PaletteOptimizationNode:
+class PixydustQuantize2:
     @classmethod
     def INPUT_TYPES(s):
         return {
@@ -135,7 +135,7 @@ class PaletteOptimizationNode:
     RETURN_TYPES = ("IMAGE", "IMAGE", "PALETTE")
     RETURN_NAMES = ("Optimized Image", "Color Histogram", "Fixed Palette")
     FUNCTION = "optimize_palette"
-    CATEGORY = "image/✨Pixydust Quantizer"
+    CATEGORY = "image/Pixydust Quantizer🧚✨"
 
     def optimize_palette(self, reduced_image, fixed_colors, reduction_method, dither_pattern, color_distance_threshold, palette_tensor=None):
         pil_reduced = self.tensor_to_pil(reduced_image)
@@ -284,12 +284,11 @@ class PaletteOptimizationNode:
 
 # Add these to your NODE_CLASS_MAPPINGS
 NODE_CLASS_MAPPINGS = {
-    "ColorReducerNode": ColorReducerNode,
-    "PaletteOptimizationNode": PaletteOptimizationNode,
+    "PixydustQuantize1": PixydustQuantize1,
+    "PixydustQuantize2": PixydustQuantize2,
 }
 
-# Add these to your NODE_DISPLAY_NAME_MAPPINGS
 NODE_DISPLAY_NAME_MAPPINGS = {
-    "ColorReducerNode": "Pixydust Quantize-1",
-    "PaletteOptimizationNode": "Pixydust Quantize-2",
+    "PixydustQuantize1": "Pixydust Quantize-1",
+    "PixydustQuantize2": "Pixydust Quantize-2",
 }
