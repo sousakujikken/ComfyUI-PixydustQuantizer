@@ -1,0 +1,538 @@
+{
+  "last_node_id": 33,
+  "last_link_id": 48,
+  "nodes": [
+    {
+      "id": 1,
+      "type": "LoadImage",
+      "pos": [
+        262,
+        -324
+      ],
+      "size": {
+        "0": 315,
+        "1": 314
+      },
+      "flags": {},
+      "order": 1,
+      "mode": 0,
+      "outputs": [
+        {
+          "name": "IMAGE",
+          "type": "IMAGE",
+          "links": [
+            14
+          ],
+          "slot_index": 0,
+          "shape": 3
+        },
+        {
+          "name": "MASK",
+          "type": "MASK",
+          "links": null,
+          "shape": 3
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "LoadImage"
+      },
+      "widgets_values": [
+        "sample_image_03.png",
+        "image"
+      ]
+    },
+    {
+      "id": 10,
+      "type": "PreviewImage",
+      "pos": [
+        602,
+        66
+      ],
+      "size": {
+        "0": 391,
+        "1": 302
+      },
+      "flags": {},
+      "order": 6,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "images",
+          "type": "IMAGE",
+          "link": 41
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "PreviewImage"
+      }
+    },
+    {
+      "id": 11,
+      "type": "ImageScaleBy",
+      "pos": [
+        265,
+        40
+      ],
+      "size": {
+        "0": 315,
+        "1": 82
+      },
+      "flags": {},
+      "order": 3,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "image",
+          "type": "IMAGE",
+          "link": 14
+        }
+      ],
+      "outputs": [
+        {
+          "name": "IMAGE",
+          "type": "IMAGE",
+          "links": [
+            37
+          ],
+          "slot_index": 0,
+          "shape": 3
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "ImageScaleBy"
+      },
+      "widgets_values": [
+        "nearest-exact",
+        0.5
+      ]
+    },
+    {
+      "id": 26,
+      "type": "ColorReducerNode",
+      "pos": [
+        631,
+        -319
+      ],
+      "size": {
+        "0": 317.4000244140625,
+        "1": 122
+      },
+      "flags": {},
+      "order": 4,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "image",
+          "type": "IMAGE",
+          "link": 37
+        }
+      ],
+      "outputs": [
+        {
+          "name": "Reduced Color Image",
+          "type": "IMAGE",
+          "links": [
+            39
+          ],
+          "slot_index": 0,
+          "shape": 3
+        },
+        {
+          "name": "Palette Preview",
+          "type": "IMAGE",
+          "links": null,
+          "shape": 3
+        },
+        {
+          "name": "Palette Tensor",
+          "type": "PALETTE",
+          "links": [],
+          "slot_index": 2,
+          "shape": 3
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "ColorReducerNode"
+      },
+      "widgets_values": [
+        "K-Means",
+        192
+      ]
+    },
+    {
+      "id": 27,
+      "type": "PaletteOptimizationNode",
+      "pos": [
+        602,
+        -150
+      ],
+      "size": {
+        "0": 380.4000244140625,
+        "1": 170
+      },
+      "flags": {},
+      "order": 5,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "reduced_image",
+          "type": "IMAGE",
+          "link": 39
+        },
+        {
+          "name": "palette_tensor",
+          "type": "PALETTE",
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "name": "Optimized Image",
+          "type": "IMAGE",
+          "links": [
+            41
+          ],
+          "slot_index": 0,
+          "shape": 3
+        },
+        {
+          "name": "Color Histogram",
+          "type": "IMAGE",
+          "links": [
+            42
+          ],
+          "slot_index": 1,
+          "shape": 3
+        },
+        {
+          "name": "Fixed Palette",
+          "type": "PALETTE",
+          "links": [
+            43
+          ],
+          "slot_index": 2,
+          "shape": 3
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "PaletteOptimizationNode"
+      },
+      "widgets_values": [
+        16,
+        "K-Means",
+        "8x8 Bayer",
+        4.800000000000001
+      ]
+    },
+    {
+      "id": 28,
+      "type": "PreviewImage",
+      "pos": [
+        612,
+        417
+      ],
+      "size": [
+        264.12406942879943,
+        140.7412763648672
+      ],
+      "flags": {},
+      "order": 7,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "images",
+          "type": "IMAGE",
+          "link": 42
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "PreviewImage"
+      }
+    },
+    {
+      "id": 29,
+      "type": "PaletteOptimizationNode",
+      "pos": [
+        1349,
+        -164
+      ],
+      "size": {
+        "0": 380.4000244140625,
+        "1": 170
+      },
+      "flags": {},
+      "order": 8,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "reduced_image",
+          "type": "IMAGE",
+          "link": 47
+        },
+        {
+          "name": "palette_tensor",
+          "type": "PALETTE",
+          "link": 43
+        }
+      ],
+      "outputs": [
+        {
+          "name": "Optimized Image",
+          "type": "IMAGE",
+          "links": [
+            45
+          ],
+          "slot_index": 0,
+          "shape": 3
+        },
+        {
+          "name": "Color Histogram",
+          "type": "IMAGE",
+          "links": [
+            48
+          ],
+          "slot_index": 1,
+          "shape": 3
+        },
+        {
+          "name": "Fixed Palette",
+          "type": "PALETTE",
+          "links": null,
+          "shape": 3
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "PaletteOptimizationNode"
+      },
+      "widgets_values": [
+        16,
+        "MedianCut",
+        "8x8 Bayer",
+        3
+      ]
+    },
+    {
+      "id": 30,
+      "type": "LoadImage",
+      "pos": [
+        1000,
+        -319
+      ],
+      "size": [
+        330.57861488334527,
+        315.9230945466854
+      ],
+      "flags": {},
+      "order": 0,
+      "mode": 0,
+      "outputs": [
+        {
+          "name": "IMAGE",
+          "type": "IMAGE",
+          "links": [
+            46
+          ],
+          "slot_index": 0,
+          "shape": 3
+        },
+        {
+          "name": "MASK",
+          "type": "MASK",
+          "links": null,
+          "shape": 3
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "LoadImage"
+      },
+      "widgets_values": [
+        "ComfyUI_00911_.png",
+        "image"
+      ]
+    },
+    {
+      "id": 31,
+      "type": "PreviewImage",
+      "pos": [
+        1346,
+        53
+      ],
+      "size": {
+        "0": 391,
+        "1": 302
+      },
+      "flags": {},
+      "order": 9,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "images",
+          "type": "IMAGE",
+          "link": 45
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "PreviewImage"
+      }
+    },
+    {
+      "id": 32,
+      "type": "ImageScaleBy",
+      "pos": [
+        1010,
+        37
+      ],
+      "size": {
+        "0": 315,
+        "1": 82
+      },
+      "flags": {},
+      "order": 2,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "image",
+          "type": "IMAGE",
+          "link": 46
+        }
+      ],
+      "outputs": [
+        {
+          "name": "IMAGE",
+          "type": "IMAGE",
+          "links": [
+            47
+          ],
+          "slot_index": 0,
+          "shape": 3
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "ImageScaleBy"
+      },
+      "widgets_values": [
+        "nearest-exact",
+        0.5
+      ]
+    },
+    {
+      "id": 33,
+      "type": "PreviewImage",
+      "pos": [
+        1336,
+        414
+      ],
+      "size": [
+        267.6695239742535,
+        143.55945818304934
+      ],
+      "flags": {},
+      "order": 10,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "images",
+          "type": "IMAGE",
+          "link": 48
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "PreviewImage"
+      }
+    }
+  ],
+  "links": [
+    [
+      14,
+      1,
+      0,
+      11,
+      0,
+      "IMAGE"
+    ],
+    [
+      37,
+      11,
+      0,
+      26,
+      0,
+      "IMAGE"
+    ],
+    [
+      39,
+      26,
+      0,
+      27,
+      0,
+      "IMAGE"
+    ],
+    [
+      41,
+      27,
+      0,
+      10,
+      0,
+      "IMAGE"
+    ],
+    [
+      42,
+      27,
+      1,
+      28,
+      0,
+      "IMAGE"
+    ],
+    [
+      43,
+      27,
+      2,
+      29,
+      1,
+      "PALETTE"
+    ],
+    [
+      45,
+      29,
+      0,
+      31,
+      0,
+      "IMAGE"
+    ],
+    [
+      46,
+      30,
+      0,
+      32,
+      0,
+      "IMAGE"
+    ],
+    [
+      47,
+      32,
+      0,
+      29,
+      0,
+      "IMAGE"
+    ],
+    [
+      48,
+      29,
+      1,
+      33,
+      0,
+      "IMAGE"
+    ]
+  ],
+  "groups": [],
+  "config": {},
+  "extra": {
+    "ds": {
+      "scale": 1.1000000000000008,
+      "offset": [
+        -225.4877057924362,
+        407.9405418169503
+      ]
+    }
+  },
+  "version": 0.4
+}
