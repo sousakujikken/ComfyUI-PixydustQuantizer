@@ -1,3 +1,7 @@
+# Copyright (c) 2024 Sousakujikken HIRO
+# This software is released under the MIT License.
+# https://opensource.org/licenses/MIT
+
 import numpy as np
 import torch
 from PIL import Image, ImageDraw
