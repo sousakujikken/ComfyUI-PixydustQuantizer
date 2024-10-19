@@ -6,7 +6,7 @@ from scipy.spatial import cKDTree
 from skimage import color
 
 
-COLOR_REDUCTION_METHODS = ["Pillow Quantize", "K-Means", "MedianCut"]
+COLOR_REDUCTION_METHODS = ["K-Means", "MedianCut", "Pillow Quantize"]
 
 class PixydustQuantize1:
     @classmethod
@@ -15,7 +15,7 @@ class PixydustQuantize1:
             "required": {
                 "image": ("IMAGE",),
                 "color_reduction_method": (COLOR_REDUCTION_METHODS,),
-                "max_colors": ([2,4,8,16,32,64,96,128,192,256],),
+                "max_colors": ([2,4,8,16,32,64,96,128,192,256], {"default": 128}),
             }
         }
 
@@ -122,9 +122,9 @@ class PixydustQuantize2:
         return {
             "required": {
                 "reduced_image": ("IMAGE",),
-                "fixed_colors": ([2,4,6,8,12,16,24,32],),
+                "fixed_colors": ([2,4,6,8,12,16,24,32], {"default": 16}),
                 "reduction_method": (["K-Means", "MedianCut"],),
-                "dither_pattern": (["None", "2x2 Bayer", "4x4 Bayer", "8x8 Bayer"],),
+                "dither_pattern": (["None", "2x2 Bayer", "4x4 Bayer", "8x8 Bayer"], {"default": "8x8 Bayer"}),
                 "color_distance_threshold": ("FLOAT", {"default": 2.0, "min": 0.0, "max": 10.0, "step": 0.1}),
             },
             "optional": {
@@ -235,7 +235,6 @@ class PixydustQuantize2:
                     color1_lab = lab_palette[indices[0]]
                     color2_lab = lab_palette[indices[1]]
                     
-                    # projected_point, t = self._project_point_to_line_segment(old_color_lab, color1_lab, color2_lab)
                     t = self._project_point_to_line_segment(old_color_lab, color1_lab, color2_lab)
                     
                     threshold = bayer_matrix[y % bayer_matrix.shape[0], x % bayer_matrix.shape[1]]
@@ -266,13 +265,6 @@ class PixydustQuantize2:
         for _ in range(int(np.log2(n)) - 1):
             base = np.block([[4*base, 4*base+2], [4*base+3, 4*base+1]])
         return base / (n * n)
-
-    # def _project_point_to_line_segment(self, point, line_start, line_end):
-    #     line_vec = line_end - line_start
-    #     point_vec = point - line_start
-    #     t = np.dot(point_vec, line_vec) / np.dot(line_vec, line_vec)
-    #     t = np.clip(t, 0, 1)
-    #     return line_start + t * line_vec, t
 
     def _project_point_to_line_segment(self, point, line_start, line_end):
         line_vec = line_end - line_start
