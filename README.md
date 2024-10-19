@@ -71,8 +71,8 @@ Outputs:
 Here’s a simple workflow example:
 
 1. Load an image
-2. Connect the image to the ColorReducerNode
-3. Connect the output of the ColorReducerNode to the PaletteOptimizationNode
+2. Connect the image to the Pixydust Quantize-1
+3. Connect the output of the ColorReducerNode to the Pixydust Quantize-2
 4. Save or display the resulting optimized image
 
 ![Example workflow](workflow.png)
