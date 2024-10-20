@@ -2,7 +2,17 @@
 
 Pixydust Quantizer is a custom node extension for ComfyUI that allows for the simplified recreation of tile patterns used in 1990s 16-color PC graphics, offering advanced color quantization and palette optimization features.
 
+- Original
+
+![Sample Image of Pixydust Quantizer](images/sample_img_02.png)
+
+- Pixydust Quantizer
+
 ![Sample Image of Pixydust Quantizer](images/sample_img_03.png)
+
+- Regular tool  (ImageQuantize)
+
+![Sample Image of Pixydust Quantizer](images/sample_img_04.png)
 
 ## Features and Concept
 
