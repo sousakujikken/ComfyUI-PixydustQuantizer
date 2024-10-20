@@ -1,0 +1,15 @@
+[project]
+name = "comfyui-pixydustquantizer"
+description = "Pixydust Quantizer is a custom node extension for ComfyUI that allows for the simplified recreation of tile patterns used in 1990s 16-color PC graphics, offering advanced color quantization and palette optimization features."
+version = "1.0.0"
+license = {file = "LICENSE"}
+dependencies = ["numpy", "torch", "Pillow", "scikit-learn", "scipy", "scikit-image"]
+
+[project.urls]
+Repository = "https://github.com/sousakujikken/ComfyUI-PixydustQuantizer"
+#  Used by Comfy Registry https://comfyregistry.org
+
+[tool.comfy]
+PublisherId = ""
+DisplayName = "ComfyUI-PixydustQuantizer"
+Icon = ""
