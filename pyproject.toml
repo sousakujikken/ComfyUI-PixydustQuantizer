@@ -10,6 +10,6 @@ Repository = "https://github.com/sousakujikken/ComfyUI-PixydustQuantizer"
 #  Used by Comfy Registry https://comfyregistry.org
 
 [tool.comfy]
-PublisherId = ""
+PublisherId = "sousakujikken"
 DisplayName = "ComfyUI-PixydustQuantizer"
 Icon = ""
