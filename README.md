@@ -100,6 +100,8 @@ Inputs:
 Outputs:
 - `IMAGE`: Processed image with CRT-like effects applied
 
+Note: The output image dimensions are 4x larger than the input (both width and height are quadrupled to simulate the CRT subpixel pattern)
+
 ## Example Workflow
 
 1. Color Quantization Step:
