@@ -15,8 +15,8 @@ class CRTLikeEffectNode:
                 "image": ("IMAGE",),
                 "gaussian_width_x": ("FLOAT", {"default": 1.0, "min": 0.1, "max": 3.0, "step": 0.1}),
                 "gaussian_width_y": ("FLOAT", {"default": 1.0, "min": 0.1, "max": 3.0, "step": 0.1}),
-                "intensity_scale": ("FLOAT", {"default": 1.2, "min": 0.1, "max": 10.0, "step": 0.1}),
-                "gamma": ("FLOAT", {"default": 2.2, "min": 0.1, "max": 5.0, "step": 0.1}),
+                "intensity_scale": ("FLOAT", {"default": 5.0, "min": 0.1, "max": 10.0, "step": 0.1}),
+                "gamma": ("FLOAT", {"default": 1.0, "min": 0.1, "max": 5.0, "step": 0.1}),
                 "gaussian_kernel_size": ([5, 7, 9, 11, 13, 15], {"default": 11}),
                 "enable_resize": ("BOOLEAN", {"default": True, "label_on": "enabled", "label_off": "disabled"}),
                 "resize_pixels": ([128, 192, 256, 320, 384, 448, 512], {"default": 256}),
@@ -198,6 +198,8 @@ class CRTLikeEffectNode:
         )
 
 class XYBlurNode:
+    kernel_cache = {}  # キャッシュを追加してカーネル再計算を防ぐ
+
     @classmethod
     def INPUT_TYPES(cls):
         return {
@@ -206,6 +208,7 @@ class XYBlurNode:
                 "sigma_x": ("FLOAT", {"default": 1.0, "min": 0.1, "max": 10.0, "step": 0.1}),
                 "sigma_y": ("FLOAT", {"default": 1.0, "min": 0.1, "max": 10.0, "step": 0.1}),
                 "intensity": ("FLOAT", {"default": 1.0, "min": 0.0, "max": 2.0, "step": 0.1}),
+                "max_batch_size": ([1, 2, 4, 8, 16, 24, 32], {"default": 4}),
             }
         }
 
@@ -216,95 +219,256 @@ class XYBlurNode:
     def create_gaussian_kernel(self, kernel_size, sigma_x, sigma_y, device, dtype):
         """
         Generates an anisotropic Gaussian kernel with independent vertical and horizontal components.
+        Implements caching for performance optimization.
         """
-        # Generate grid coordinates
-        x = torch.arange(-(kernel_size // 2), kernel_size // 2 + 1, dtype=torch.float32, device=device)
-        y = torch.arange(-(kernel_size // 2), kernel_size // 2 + 1, dtype=torch.float32, device=device)
-        y, x = torch.meshgrid(y, x, indexing='ij')
+        cache_key = (kernel_size, sigma_x, sigma_y, dtype)
+        if cache_key not in self.kernel_cache:
+            # Generate grid coordinates
+            x = torch.arange(-(kernel_size // 2), kernel_size // 2 + 1, dtype=torch.float32, device=device)
+            y = torch.arange(-(kernel_size // 2), kernel_size // 2 + 1, dtype=torch.float32, device=device)
+            y, x = torch.meshgrid(y, x, indexing='ij')
+            
+            # Calculate Gaussian function
+            gaussian = torch.exp(-(x**2 / (2 * sigma_x**2) + y**2 / (2 * sigma_y**2)))
+            
+            # Normalize
+            gaussian = gaussian / gaussian.sum()
+            
+            # Cache the kernel
+            self.kernel_cache[cache_key] = gaussian.unsqueeze(0).unsqueeze(0).to(dtype=dtype)
         
-        # Calculate Gaussian function (independent for vertical and horizontal)
-        gaussian = torch.exp(-(x**2 / (2 * sigma_x**2) + y**2 / (2 * sigma_y**2)))
-        
-        # Normalize so that the sum is 1
-        gaussian = gaussian / gaussian.sum()
-        
-        # Adjust the shape of the kernel to [1, 1, kernel_size, kernel_size]
-        return gaussian.unsqueeze(0).unsqueeze(0).to(dtype=dtype)
+        return self.kernel_cache[cache_key]
 
     def calculate_kernel_size(self, sigma_x, sigma_y, max_kernel_size=31):
         """
-        Calculates an appropriate kernel size based on sigma_x and sigma_y.
-        Typically, the kernel size is set to 6 * sigma and rounded to an odd number.
+        Calculates appropriate kernel size based on sigma values.
         """
-        # Calculate kernel size based on the largest sigma
         max_sigma = max(sigma_x, sigma_y)
         kernel_size = int(6 * max_sigma + 1)
-        
-        # Adjust kernel size to be odd
-        if kernel_size % 2 == 0:
-            kernel_size += 1
-        
-        # Set minimum kernel size to 3
-        kernel_size = max(kernel_size, 3)
-        
-        # Set maximum kernel size
-        kernel_size = min(kernel_size, max_kernel_size)
-        
+        kernel_size = max(3, min(kernel_size + (kernel_size % 2 == 0), max_kernel_size))
         return kernel_size
 
-    def apply_blur(self, image: torch.Tensor, sigma_x: float, sigma_y: float, intensity: float):
+    def process_batch(self, batch, kernel, pad_size, intensity, device):
         """
-        Applies an anisotropic Gaussian blur to the image.
-        The kernel size is automatically calculated based on sigma_x and sigma_y.
+        Process a single batch of images with the blur effect.
         """
-        device = image.device
-        dtype = image.dtype
-        B, H, W, C = image.shape
+        # Ensure correct data type (half precision for GPU efficiency)
+        batch = batch.half()
+        kernel = kernel.half()
 
-        # Calculate kernel size
-        kernel_size = self.calculate_kernel_size(sigma_x, sigma_y)
-        print(f"Calculated kernel_size: {kernel_size} based on sigma_x: {sigma_x}, sigma_y: {sigma_y}")
-
-        # Convert to [B, C, H, W] format
-        x = image.permute(0, 3, 1, 2)
-
-        # Generate Gaussian kernel
-        kernel = self.create_gaussian_kernel(kernel_size, sigma_x, sigma_y, device, dtype)
-
-        # Repeat the same kernel for each channel
-        kernel = kernel.repeat(C, 1, 1, 1)
-
-        # Calculate padding size
-        pad_size = kernel_size // 2
-
-        # Apply convolution operation (independently for each channel)
+        # Apply convolution
         blurred = F.conv2d(
-            x,
+            batch,
             kernel,
             padding=pad_size,
-            groups=C  # Process each channel independently
+            groups=batch.shape[1]  # Process each channel independently
         )
 
-        # Apply the intensity parameter
-        # Allows intensity to be in the range [0, 2]
-        # intensity = 1.0 for normal blur
-        # intensity < 1.0 to decrease the blur intensity
-        # intensity > 1.0 to increase the blur intensity
-        blurred = x * (1 - intensity) + blurred * intensity
+        # Apply intensity blending
+        blurred = batch * (1 - intensity) + blurred * intensity
+
+        # Clamp values
+        blurred = torch.clamp(blurred, 0, 1)
+
+        # Convert back to float32 for output
+        return blurred.float()
+
+    def apply_blur_optimized(self, image, sigma_x, sigma_y, intensity, max_batch_size):
+        """
+        Applies blur effect with optimized batch processing and GPU memory management.
+        """
+        device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        B, C, H, W = image.shape
+        print(f"\nProcessing total batch size: {B}")
+
+        # Calculate kernel size and create kernel
+        kernel_size = self.calculate_kernel_size(sigma_x, sigma_y)
+        kernel = self.create_gaussian_kernel(kernel_size, sigma_x, sigma_y, device, torch.float32)
+        kernel = kernel.repeat(C, 1, 1, 1)
+        pad_size = kernel_size // 2
+
+        # Process batches
+        outputs = []
+        for i in range(0, B, max_batch_size):
+            batch = image[i:i + max_batch_size]
+            current_batch_size = batch.shape[0]
+            print(f"\nProcessing mini-batch {i//max_batch_size + 1}: size = {current_batch_size}")
+
+            try:
+                processed_batch = self.process_batch(
+                    batch, kernel, pad_size, intensity, device
+                )
+                print(f"Mini-batch {i//max_batch_size + 1} processed: shape = {processed_batch.shape}")
+                
+                # Move processed batch to CPU to free GPU memory
+                outputs.append(processed_batch.cpu())
+                print(f"Mini-batch {i//max_batch_size + 1} transferred to CPU")
+                
+                del processed_batch
+                torch.cuda.empty_cache()
+
+            except RuntimeError as e:
+                if "out of memory" in str(e):
+                    print(f"OOM detected, processing images individually in mini-batch {i//max_batch_size + 1}")
+                    # Process images one by one if batch processing fails
+                    for j, single_image in enumerate(batch):
+                        processed_single = self.process_batch(
+                            single_image.unsqueeze(0),
+                            kernel, pad_size, intensity, device
+                        )
+                        print(f"Processed individual image {j+1}/{current_batch_size} in mini-batch {i//max_batch_size + 1}")
+                        outputs.append(processed_single.cpu())
+                        del processed_single
+                        torch.cuda.empty_cache()
+                else:
+                    raise e
+
+        # Combine all processed batches
+        final_output = torch.cat(outputs, dim=0)
+        print(f"\nAll mini-batches combined: final shape = {final_output.shape}")
+        return final_output
+
+    def apply_blur(self, image: torch.Tensor, sigma_x: float, sigma_y: float, 
+                  intensity: float, max_batch_size: int):
+        """
+        Main entry point for the blur effect.
+        """
+        print(f"Input image shape: {image.shape}, dtype: {image.dtype}")
+
+        # Normalize input if necessary
+        if image.max() > 1.0:
+            image = image / 255.0
+
+        device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        image = image.to(device)
+
+        # Convert from [B, H, W, C] to [B, C, H, W]
+        image = image.permute(0, 3, 1, 2)
+
+        # Apply optimized blur processing
+        blurred = self.apply_blur_optimized(
+            image, sigma_x, sigma_y, intensity, max_batch_size
+        )
 
         # Convert back to [B, H, W, C] format
         blurred = blurred.permute(0, 2, 3, 1)
 
-        # Clamp the values to [0, 1]
-        blurred = torch.clamp(blurred, 0, 1)
-
-        # Output debug information
-        print(f"After blur: mean={blurred.mean().item():.4f}, std={blurred.std().item():.4f}, min={blurred.min().item():.4f}, max={blurred.max().item():.4f}")
-
-        # Move the tensor to CPU before returning
-        blurred = blurred.cpu()
+        # Print debug information
+        print(f"After blur: mean={blurred.mean().item():.4f}, "
+              f"std={blurred.std().item():.4f}, "
+              f"min={blurred.min().item():.4f}, "
+              f"max={blurred.max().item():.4f}")
 
         return (blurred,)
+    
+# class XYBlurNode:
+#     @classmethod
+#     def INPUT_TYPES(cls):
+#         return {
+#             "required": {
+#                 "image": ("IMAGE",),
+#                 "sigma_x": ("FLOAT", {"default": 1.0, "min": 0.1, "max": 10.0, "step": 0.1}),
+#                 "sigma_y": ("FLOAT", {"default": 1.0, "min": 0.1, "max": 10.0, "step": 0.1}),
+#                 "intensity": ("FLOAT", {"default": 1.0, "min": 0.0, "max": 2.0, "step": 0.1}),
+#             }
+#         }
+
+#     RETURN_TYPES = ("IMAGE",)
+#     FUNCTION = "apply_blur"
+#     CATEGORY = "image/Pixydust Quantizer🧚✨"
+
+#     def create_gaussian_kernel(self, kernel_size, sigma_x, sigma_y, device, dtype):
+#         """
+#         Generates an anisotropic Gaussian kernel with independent vertical and horizontal components.
+#         """
+#         # Generate grid coordinates
+#         x = torch.arange(-(kernel_size // 2), kernel_size // 2 + 1, dtype=torch.float32, device=device)
+#         y = torch.arange(-(kernel_size // 2), kernel_size // 2 + 1, dtype=torch.float32, device=device)
+#         y, x = torch.meshgrid(y, x, indexing='ij')
+        
+#         # Calculate Gaussian function (independent for vertical and horizontal)
+#         gaussian = torch.exp(-(x**2 / (2 * sigma_x**2) + y**2 / (2 * sigma_y**2)))
+        
+#         # Normalize so that the sum is 1
+#         gaussian = gaussian / gaussian.sum()
+        
+#         # Adjust the shape of the kernel to [1, 1, kernel_size, kernel_size]
+#         return gaussian.unsqueeze(0).unsqueeze(0).to(dtype=dtype)
+
+#     def calculate_kernel_size(self, sigma_x, sigma_y, max_kernel_size=31):
+#         """
+#         Calculates an appropriate kernel size based on sigma_x and sigma_y.
+#         Typically, the kernel size is set to 6 * sigma and rounded to an odd number.
+#         """
+#         # Calculate kernel size based on the largest sigma
+#         max_sigma = max(sigma_x, sigma_y)
+#         kernel_size = int(6 * max_sigma + 1)
+        
+#         # Adjust kernel size to be odd
+#         if kernel_size % 2 == 0:
+#             kernel_size += 1
+        
+#         # Set minimum kernel size to 3
+#         kernel_size = max(kernel_size, 3)
+        
+#         # Set maximum kernel size
+#         kernel_size = min(kernel_size, max_kernel_size)
+        
+#         return kernel_size
+
+#     def apply_blur(self, image: torch.Tensor, sigma_x: float, sigma_y: float, intensity: float):
+#         """
+#         Applies an anisotropic Gaussian blur to the image.
+#         The kernel size is automatically calculated based on sigma_x and sigma_y.
+#         """
+#         device = image.device
+#         dtype = image.dtype
+#         B, H, W, C = image.shape
+
+#         # Calculate kernel size
+#         kernel_size = self.calculate_kernel_size(sigma_x, sigma_y)
+#         print(f"Calculated kernel_size: {kernel_size} based on sigma_x: {sigma_x}, sigma_y: {sigma_y}")
+
+#         # Convert to [B, C, H, W] format
+#         x = image.permute(0, 3, 1, 2)
+
+#         # Generate Gaussian kernel
+#         kernel = self.create_gaussian_kernel(kernel_size, sigma_x, sigma_y, device, dtype)
+
+#         # Repeat the same kernel for each channel
+#         kernel = kernel.repeat(C, 1, 1, 1)
+
+#         # Calculate padding size
+#         pad_size = kernel_size // 2
+
+#         # Apply convolution operation (independently for each channel)
+#         blurred = F.conv2d(
+#             x,
+#             kernel,
+#             padding=pad_size,
+#             groups=C  # Process each channel independently
+#         )
+
+#         # Apply the intensity parameter
+#         # Allows intensity to be in the range [0, 2]
+#         # intensity = 1.0 for normal blur
+#         # intensity < 1.0 to decrease the blur intensity
+#         # intensity > 1.0 to increase the blur intensity
+#         blurred = x * (1 - intensity) + blurred * intensity
+
+#         # Convert back to [B, H, W, C] format
+#         blurred = blurred.permute(0, 2, 3, 1)
+
+#         # Clamp the values to [0, 1]
+#         blurred = torch.clamp(blurred, 0, 1)
+
+#         # Output debug information
+#         print(f"After blur: mean={blurred.mean().item():.4f}, std={blurred.std().item():.4f}, min={blurred.min().item():.4f}, max={blurred.max().item():.4f}")
+
+#         # Move the tensor to CPU before returning
+#         blurred = blurred.cpu()
+
+#         return (blurred,)
 
 NODE_CLASS_MAPPINGS = {
     "CRTLikeEffectNode": CRTLikeEffectNode,
