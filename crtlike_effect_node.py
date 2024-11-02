@@ -4,8 +4,6 @@
 
 import torch
 import torch.nn.functional as F
-# from PIL import Image
-# import numpy as np
 
 class CRTLikeEffectNode:
     kernel_cache = {}
@@ -22,6 +20,7 @@ class CRTLikeEffectNode:
                 "gaussian_kernel_size": ([5, 7, 9, 11, 13, 15], {"default": 11}),
                 "enable_resize": ("BOOLEAN", {"default": True, "label_on": "enabled", "label_off": "disabled"}),
                 "resize_pixels": ([128, 192, 256, 320, 384, 448, 512], {"default": 256}),
+                "max_batch_size": ([1, 2, 4, 8, 16, 24, 32, 48, 64], {"default": 4}),
             }
         }
 
@@ -30,144 +29,173 @@ class CRTLikeEffectNode:
     CATEGORY = "image/Pixydust Quantizer🧚✨"
 
     def get_gaussian_kernel(self, kernel_size, width_x, width_y, gamma, device, dtype):
-        """
-        Retrieves or computes the Gaussian kernel based on the provided parameters.
-        Caches the kernel for future use to avoid redundant computations.
-        """
         key = (kernel_size, width_x, width_y, gamma)
         if key not in self.kernel_cache:
-            # Generate grid coordinates
             x = torch.arange(kernel_size, device=device, dtype=dtype).float()
             y = torch.arange(kernel_size, device=device, dtype=dtype).float()
             Y, X = torch.meshgrid(y, x, indexing='ij')
 
-            # Calculate Gaussian function with separate widths
             distance_squared = (((X - (kernel_size / 2 - 0.5)) / width_x) ** 2 +
-                                ((Y - (kernel_size / 2 - 0.5)) / width_y) ** 2)
+                              ((Y - (kernel_size / 2 - 0.5)) / width_y) ** 2)
             gaussian = torch.exp(-distance_squared / 2)
-
-            # Apply gamma correction
             gaussian = torch.pow(gaussian, 1 / gamma)
-
-            # Normalize the kernel
             gaussian = gaussian / gaussian.sum()
-
-            # Reshape to [1, 1, K, K] for convolution
-            gaussian = gaussian.unsqueeze(0).unsqueeze(0)  # [1, 1, K, K]
+            gaussian = gaussian.unsqueeze(0).unsqueeze(0)
 
             self.kernel_cache[key] = gaussian.to(device=device, dtype=dtype)
         return self.kernel_cache[key]
 
-    def apply_crt_effect_gpu_optimized(self, image, gaussian_width_x, gaussian_width_y, intensity_scale, gaussian_kernel_size, gamma):
+    def process_batch(self, batch, gaussian_kernel, device, intensity_scale, gamma):
         """
-        Optimized GPU implementation of the CRT-like effect using vectorized operations,
-        precomputed Gaussian kernels, and mixed precision.
+        単一のミニバッチを処理。データ型の一貫性を保証。
         """
-        # Convert image to float16 for mixed precision
-        image = image.half()
+        # バッチとカーネルを同じデータ型(half)に変換
+        batch = batch.half()
+        gaussian_kernel = gaussian_kernel.half()  # カーネルもhalf精度に変換
 
-        B, C, H, W = image.shape
-        device = image.device
-        dtype = image.dtype  # Should be torch.float16
+        B, C, H, W = batch.shape
 
-        # Validate the number of channels
-        if C != 3:
-            raise ValueError(f"Expected image with 3 channels (RGB), but got {C} channels.")
+        # 4倍にアップスケール
+        upscaled = F.interpolate(batch, scale_factor=4, mode='nearest')
+        _, _, H4, W4 = upscaled.shape
 
-        # Upscale image by 4x using nearest
-        upscaled_image = F.interpolate(image, scale_factor=4, mode='nearest')  # [B, 3, H*4, W*4]
-        B, C, H4, W4 = upscaled_image.shape
-
-        # Create row and column indices for 4x4 blocks
-        rows = torch.arange(H4, device=device).view(1, 1, H4, 1) % 4  # [1, 1, H4, 1]
-        cols = torch.arange(W4, device=device).view(1, 1, 1, W4) % 4  # [1, 1, 1, W4]
+        # インデックス生成（bool型のままで問題ない）
+        rows = torch.arange(H4, device=device).view(1, 1, H4, 1) % 4
+        cols = torch.arange(W4, device=device).view(1, 1, 1, W4) % 4
         rows = rows.expand(B, C, H4, W4)
         cols = cols.expand(B, C, H4, W4)
 
-        # Create masks for R, G, B channels
-        R_mask = ((cols == 0) & (rows < 3)).float()  # [B, C, H4, W4]
-        G_mask = ((cols == 1) & (rows < 3)).float()
-        B_mask = ((cols == 2) & (rows < 3)).float()
+        # マスク生成（half精度に変換）
+        R_mask = ((cols == 0) & (rows < 3)).half()
+        G_mask = ((cols == 1) & (rows < 3)).half()
+        B_mask = ((cols == 2) & (rows < 3)).half()
 
-        # Initialize shifted_images with zeros
-        shifted_images = torch.zeros_like(upscaled_image, device=device, dtype=dtype)
+        # シフト処理
+        shifted = torch.zeros_like(upscaled)
+        shifted[:, 0, :, :] = upscaled[:, 0, :, :] * R_mask[:, 0, :, :]
+        shifted[:, 1, :, :] = upscaled[:, 1, :, :] * G_mask[:, 1, :, :]
+        shifted[:, 2, :, :] = upscaled[:, 2, :, :] * B_mask[:, 2, :, :]
 
-        # Assign shifted values for each channel
-        shifted_images[:, 0, :, :] = upscaled_image[:, 0, :, :] * R_mask[:, 0, :, :]
-        shifted_images[:, 1, :, :] = upscaled_image[:, 1, :, :] * G_mask[:, 1, :, :]
-        shifted_images[:, 2, :, :] = upscaled_image[:, 2, :, :] * B_mask[:, 2, :, :]
+        # 畳み込み適用
+        convolved = F.conv2d(shifted, gaussian_kernel, padding=0, groups=C)
 
-        # Retrieve Gaussian kernel
-        gaussian = self.get_gaussian_kernel(gaussian_kernel_size, gaussian_width_x, gaussian_width_y, gamma, device, dtype)  # [1,1,K,K]
-
-        # Repeat the kernel for each channel
-        gaussian = gaussian.repeat(C, 1, 1, 1)  # [3,1,K,K]
-
-        # Apply convolution with the Gaussian kernel, per channel
-        # Here, groups=3 to apply each kernel to its corresponding channel
-        convolved = F.conv2d(shifted_images, gaussian, padding=0, groups=C)  # [B, 3, H*4, W*4]
-
-        # Apply intensity scaling
-        convolved = convolved * intensity_scale  # [B, 3, H*4, W*4]
-
-        # Apply gamma correction
-        convolved = torch.pow(convolved, 1 / gamma)  # [B, 3, H*4, W*4]
-
-        # Clamp the values to [0, 1]
+        # 後処理
+        convolved = convolved * intensity_scale
+        convolved = torch.pow(convolved, 1 / gamma)
         convolved = torch.clamp(convolved, 0.0, 1.0)
 
-        # Restore channel order and convert back to float32
-        convolved = convolved.permute(0, 2, 3, 1).float().cpu()  # [B, H*4, W*4, C]
+        # メモリ解放
+        del shifted, upscaled, R_mask, G_mask, B_mask
+        torch.cuda.empty_cache()
 
-        return (convolved,)
+        return convolved.permute(0, 2, 3, 1).float()
 
-    def apply_crt_effect(self, image, gaussian_width_x, gaussian_width_y, intensity_scale, gamma, gaussian_kernel_size, enable_resize, resize_pixels):
+    def apply_crt_effect_gpu_optimized(self, image, gaussian_width_x, gaussian_width_y, intensity_scale, gaussian_kernel_size, gamma, max_batch_size):
         """
-        Applies the CRT-like effect to the input image with optional resizing.
-        Utilizes optimized GPU processing with vectorization, precomputed kernels, and mixed precision.
+        バッチサイズを制限してGPUメモリを効率的に使用
+        データ型の一貫性を保証
+        """
+        device = image.device
+        B, C, H, W = image.shape
+        print(f"\nStarting batch processing: total batch size = {B}")
+
+        # ガウシアンカーネルを準備（まだfloat32のまま）
+        gaussian = self.get_gaussian_kernel(gaussian_kernel_size, gaussian_width_x, gaussian_width_y, gamma, device, torch.float32)
+        gaussian_kernel = gaussian.repeat(C, 1, 1, 1)
+
+        # バッチを分割して処理
+        outputs = []
+        for i in range(0, B, max_batch_size):
+            batch = image[i:i + max_batch_size]
+            current_batch_size = batch.shape[0]
+            print(f"\nProcessing mini-batch {i//max_batch_size + 1}: size = {current_batch_size}")
+            
+            try:
+                processed_batch = self.process_batch(
+                    batch, gaussian_kernel, device, 
+                    intensity_scale, gamma
+                )
+                print(f"Mini-batch {i//max_batch_size + 1} processed: shape = {processed_batch.shape}")
+                
+                outputs.append(processed_batch.cpu())
+                print(f"Mini-batch {i//max_batch_size + 1} transferred to CPU")
+                
+                del processed_batch
+                torch.cuda.empty_cache()
+                
+            except RuntimeError as e:
+                if "out of memory" in str(e):
+                    print(f"OOM detected, processing images individually in mini-batch {i//max_batch_size + 1}")
+                    for j, single_image in enumerate(batch):
+                        processed_single = self.process_batch(
+                            single_image.unsqueeze(0), 
+                            gaussian_kernel, device,
+                            intensity_scale, gamma
+                        )
+                        print(f"Processed individual image {j+1}/{current_batch_size} in mini-batch {i//max_batch_size + 1}")
+                        outputs.append(processed_single.cpu())
+                        del processed_single
+                        torch.cuda.empty_cache()
+                else:
+                    raise e
+
+        # 全バッチの結果を結合
+        final_output = torch.cat(outputs, dim=0)
+        print(f"\nAll mini-batches combined: final shape = {final_output.shape}")
+        return (final_output,)
+
+    def apply_crt_effect(self, image, gaussian_width_x, gaussian_width_y, intensity_scale, gamma, 
+                        gaussian_kernel_size, enable_resize, resize_pixels, max_batch_size):
+        """
+        メインの処理関数
         """
         print(f"Input image shape: {image.shape}, dtype: {image.dtype}")
 
-        # Ensure image is in float format
         if image.max() > 1.0:
             image = image / 255.0
 
-        # Move image to GPU if available
         device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         image = image.to(device, dtype=torch.float32)
 
         B, H, W, C = image.shape
-
-        # Validate the number of channels
         if C != 3:
             raise ValueError(f"Expected image with 3 channels (RGB), but got {C} channels.")
 
-        # Permute to [B, C, H, W] regardless of enable_resize
-        image = image.permute(0, 3, 1, 2)  # [B, C, H, W]
+        # [B, C, H, W]形式に変換
+        image = image.permute(0, 3, 1, 2)
 
+        # リサイズ処理
         if enable_resize:
             if H > W:
                 new_h, new_w = resize_pixels, int(resize_pixels * W / H)
             else:
                 new_h, new_w = int(resize_pixels * H / W), resize_pixels
 
-            image = F.interpolate(image, size=(new_h, new_w), mode='nearest')  # [B, C, new_h, new_w]
-            print(f"After initial resize: {image.shape}")
+            try:
+                image = F.interpolate(image, size=(new_h, new_w), mode='nearest')
+                print(f"After resize: {image.shape}")
+            except RuntimeError as e:
+                if "out of memory" in str(e):
+                    # リサイズでメモリ不足の場合、バッチごとに処理
+                    resized_batches = []
+                    for i in range(0, B, max_batch_size):
+                        batch = image[i:i + max_batch_size]
+                        resized_batch = F.interpolate(batch, size=(new_h, new_w), mode='nearest')
+                        resized_batches.append(resized_batch)
+                        del batch
+                        torch.cuda.empty_cache()
+                    image = torch.cat(resized_batches, dim=0)
+                else:
+                    raise e
         else:
-            print(f"No resizing applied. Image shape remains: {image.shape}")
+            print(f"No resizing applied. Shape: {image.shape}")
 
-        # Apply CRT effect with optimized GPU processing
-        crt_image = self.apply_crt_effect_gpu_optimized(
-            image,
-            gaussian_width_x,
-            gaussian_width_y,
-            intensity_scale,
-            gaussian_kernel_size,
-            gamma
+        # CRT効果の適用
+        return self.apply_crt_effect_gpu_optimized(
+            image, gaussian_width_x, gaussian_width_y,
+            intensity_scale, gaussian_kernel_size, gamma,
+            max_batch_size
         )
-
-        print(f"Final output shape: {crt_image[0].shape}")
-        return crt_image
 
 class XYBlurNode:
     @classmethod

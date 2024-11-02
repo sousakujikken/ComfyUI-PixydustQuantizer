@@ -6,155 +6,22 @@ import numpy as np
 import torch
 from PIL import Image, ImageDraw
 from sklearn.cluster import KMeans
-from scipy.spatial import cKDTree
 from skimage import color
-from .kmeans.torch_kmeans import TorchKMeans
-from .kmeans.utils import estimate_optimal_batch_size
 import math
 
-COLOR_REDUCTION_METHODS = ["K-Means", "MedianCut", "Pillow Quantize"]
-
-class PixydustQuantize1:
-    @classmethod
-    def INPUT_TYPES(s):
-        return {
-            "required": {
-                "image": ("IMAGE",),
-                "color_reduction_method": (COLOR_REDUCTION_METHODS,),
-                "max_colors": ([2,4,8,16,32,64,96,128,192,256], {"default": 128}),
-            }
-        }
-
-    RETURN_TYPES = ("IMAGE", "IMAGE", "PALETTE")
-    RETURN_NAMES = ("Reduced Color Image", "Palette Preview", "Palette Tensor")
-    FUNCTION = "process_image"
-    CATEGORY = "image/Pixydust Quantizer🧚✨"
-    OUTPUT_NODE = True
-
-
-    def process_image(self, image, color_reduction_method, max_colors):
-        pil_image = self.tensor_to_pil(image)
-        
-        reduced_image, final_palette_colors = self.reduce_colors_fixed_palette(
-            pil_image, color_reduction_method, max_colors
-        )
-        
-        palette_preview = self.create_palette_image(final_palette_colors)
-        
-        palette_tensor = torch.tensor(final_palette_colors).float() / 255.0
-        
-        return (
-            self.pil_to_tensor(reduced_image),
-            self.pil_to_tensor(palette_preview),
-            palette_tensor
-        )
-
-    def reduce_colors_fixed_palette(self, image, method, max_colors):
-        if method == "Pillow Quantize":
-            return self.pillow_quantize(image, max_colors)
-        elif method == "K-Means":
-            return self.kmeans_quantize(image, max_colors)
-        elif method == "MedianCut":
-            return self.median_cut_quantize(image, max_colors)
-        else:
-            raise ValueError(f"Unknown color reduction method: {method}")
-
-
-    def tensor_to_pil(self, tensor):
-        return Image.fromarray(np.clip(255. * tensor.cpu().numpy().squeeze(), 0, 255).astype(np.uint8))
-
-    def pil_to_tensor(self, pil_image):
-        return torch.from_numpy(np.array(pil_image).astype(np.float32) / 255.0).unsqueeze(0)
-
-
-    def create_palette_image(self, colors, tile_size=(16, 16)):
-        rows = int(np.ceil(len(colors) / 16))
-        img = Image.new('RGB', (16 * tile_size[0], rows * tile_size[1]), color='white')
-        draw = ImageDraw.Draw(img)
-        for i, color in enumerate(colors):
-            x = (i % 16) * tile_size[0]
-            y = (i // 16) * tile_size[1]
-            draw.rectangle([x, y, x + tile_size[0], y + tile_size[1]], fill=color)
-        return img
-
-    def pillow_quantize(self, image, max_colors):
-        reduced_image = image.quantize(colors=max_colors, method=Image.MEDIANCUT)
-        palette = reduced_image.getpalette()[:max_colors*3]
-        final_palette_colors = [tuple(palette[i:i+3]) for i in range(0, len(palette), 3)]
-        return reduced_image.convert('RGB'), final_palette_colors
-
-    # def kmeans_quantize(self, image, max_colors):
-    #     pixels = np.array(image).reshape(-1, 3)
-    #     kmeans = KMeans(n_clusters=max_colors, random_state=42)
-    #     labels = kmeans.fit_predict(pixels)
-    #     centers = kmeans.cluster_centers_
-    #     reduced_image = centers[labels].reshape(image.size[1], image.size[0], 3).astype(np.uint8)
-    #     final_palette_colors = [tuple(map(int, color)) for color in centers]
-    #     return Image.fromarray(reduced_image), final_palette_colors
-    
-    def kmeans_quantize(self, image, max_colors):
-        pixels = np.array(image).reshape(-1, 3)
-        
-        # 最適なバッチサイズを推定
-        batch_size = estimate_optimal_batch_size(image.size, max_colors, torch.device('cuda'))
-        
-        # GPUベースのK-means使用
-        kmeans = TorchKMeans(n_clusters=max_colors, random_state=42, batch_size=batch_size)
-        
-        # デバイス情報をログ出力
-        device_info = kmeans.get_device_info()
-        print("K-means clustering device info:", device_info)
-        
-        # クラスタリング実行
-        labels = kmeans.fit(pixels).labels_
-        centers = kmeans.cluster_centers_
-        
-        # 結果を画像形式に再構成
-        reduced_image = centers[labels].reshape(image.size[1], image.size[0], 3).astype(np.uint8)
-        final_palette_colors = [tuple(map(int, color)) for color in centers]
-        
-        return Image.fromarray(reduced_image), final_palette_colors
-    
-    def median_cut_quantize(self, image, max_colors):
-        def median_cut(colors, depth):
-            if len(colors) == 0:
-                return []
-            if depth == 0 or len(colors) == 1:
-                return [np.mean(colors, axis=0).astype(int)]
-            
-            channel = np.argmax(np.max(colors, axis=0) - np.min(colors, axis=0))
-            colors = sorted(colors, key=lambda x: x[channel])
-            median = len(colors) // 2
-            return (median_cut(colors[:median], depth - 1) +
-                    median_cut(colors[median:], depth - 1))
-
-        pixels = np.array(image)
-        unique_colors = np.unique(pixels.reshape(-1, 3), axis=0)
-        depth = int(np.log2(max_colors))
-        palette = median_cut(unique_colors, depth)
-        
-        # Map each pixel to the closest palette color
-        palette_array = np.array(palette)
-        pixels_flat = pixels.reshape(-1, 3)
-        distances = np.linalg.norm(pixels_flat[:, np.newaxis] - palette_array, axis=2)
-        closest_palette_indices = np.argmin(distances, axis=1)
-        reduced_pixels = palette_array[closest_palette_indices]
-        
-        reduced_image = reduced_pixels.reshape(pixels.shape).astype(np.uint8)
-        final_palette_colors = [tuple(color) for color in palette]
-        return Image.fromarray(reduced_image), final_palette_colors
-
-
-class PixydustQuantize2:
+class Quantizer:
     @classmethod
     def INPUT_TYPES(s):
         return {
             "required": {
                 "reduced_image": ("IMAGE",),
-                "fixed_colors": ([2,4,6,8,12,16,24,32], {"default": 16}),
+                "fixed_colors": ([2,4,6,8,12,16,24,32,64,96,128,192,256], {"default": 16}),
                 "reduction_method": (["K-Means", "MedianCut"],),
                 "dither_pattern": (["None", "2x2 Bayer", "4x4 Bayer", "8x8 Bayer"], {"default": "8x8 Bayer"}),
                 "color_distance_threshold": ("FLOAT", {"default": 2.0, "min": 0.0, "max": 10.0, "step": 0.1}),
+                "batch_mode": (["All Batches", "Single Batch"], {"default": "All Batches"}),
+                "batch_index": ("INT", {"default": 0, "min": 0, "max": 9999, "step": 1}),
+                "max_batch_size": ([1, 2, 4, 8, 16, 24, 32, 48, 64], {"default": 4}),
             },
             "optional": {
                 "palette_tensor": ("PALETTE",),
@@ -166,25 +33,77 @@ class PixydustQuantize2:
     FUNCTION = "optimize_palette"
     CATEGORY = "image/Pixydust Quantizer🧚✨"
 
-    def optimize_palette(self, reduced_image, fixed_colors, reduction_method, dither_pattern, color_distance_threshold, palette_tensor=None):
-        # Convert input image to numpy array
-        image_np = self.tensor_to_numpy(reduced_image)
+    def optimize_palette(self, reduced_image, fixed_colors, reduction_method, dither_pattern, 
+                        color_distance_threshold, batch_mode, batch_index, max_batch_size, 
+                        palette_tensor=None):
+        device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         
-        # Generate or use provided palette
+        # Convert input image to numpy array
+        image_np = self.tensor_to_numpy(reduced_image)  # [B,H,W,3]
+        batch_size = image_np.shape[0]
+        
+        # Handle single batch mode
+        if batch_mode == "Single Batch":
+            if batch_index >= batch_size:
+                raise ValueError(f"Batch index {batch_index} is out of range for batch size {batch_size}")
+            image_np = image_np[batch_index:batch_index+1]  # Select only the specified batch
+            batch_size = 1
+        
+        # Generate or use provided palette (done once before batch processing)
         if palette_tensor is not None:
+            print("Using provided palette tensor for all batches")
             palette_np = (palette_tensor.cpu().numpy() * 255).astype(np.uint8)
         else:
-            palette_np = self.generate_fixed_palette(image_np, fixed_colors, reduction_method)
+            print("Generating palette from first batch")
+            palette_np = self.generate_fixed_palette(image_np[0], fixed_colors, reduction_method)
+            print("Palette generation complete. Using this palette for all batches")
+
+        # Initialize result containers
+        dithered_images = []
+        histogram_images = []
         
-        # Apply optimized dithering
-        dithered_image = self.apply_dithering_vectorized(image_np, palette_np, dither_pattern, color_distance_threshold)
+        # Process batches with size limitation
+        num_iterations = math.ceil(batch_size / max_batch_size)
+        for iteration in range(num_iterations):
+            start_idx = iteration * max_batch_size
+            end_idx = min((iteration + 1) * max_batch_size, batch_size)
+            current_batch = image_np[start_idx:end_idx]
+            
+            print(f"Processing batch {iteration + 1}/{num_iterations} (frames {start_idx}-{end_idx-1})")
+            
+            # Process each image in the current batch
+            for img in current_batch:
+                # Process single image
+                dithered = self.apply_dithering_vectorized(
+                    img,
+                    palette_np,
+                    dither_pattern,
+                    color_distance_threshold,
+                    device
+                )
+                dithered_images.append(dithered)
+                
+                # Generate histogram
+                histogram = self.create_color_histogram(dithered)
+                histogram_images.append(histogram)
+            
+            # Clear CUDA cache after each batch
+            torch.cuda.empty_cache()
         
-        # Create color histogram
-        histogram_image = self.create_color_histogram(dithered_image)
+        # Stack results
+        dithered_batch = np.stack(dithered_images, axis=0)
+        histogram_batch = np.stack(histogram_images, axis=0)
         
+        # If in single batch mode, return only the processed batch
+        if batch_mode == "Single Batch":
+            if dithered_batch.shape[0] > 1:
+                dithered_batch = dithered_batch[0:1]  # Keep only first batch
+                histogram_batch = histogram_batch[0:1]  # Keep only first batch
+        
+        # Convert results to tensors
         return (
-            self.numpy_to_tensor(dithered_image),
-            self.numpy_to_tensor(histogram_image),
+            self.numpy_to_tensor(dithered_batch),
+            self.numpy_to_tensor(histogram_batch),
             torch.tensor(palette_np).float() / 255.0
         )
 
@@ -210,97 +129,6 @@ class PixydustQuantize2:
             rgb_centers = self.lab_to_rgb_batch(centers_tensor)
         
         return (rgb_centers.cpu().numpy() * 255).astype(np.uint8)
-
-    @torch.no_grad()
-    def apply_dithering_vectorized(self, image_np, palette_np, dither_pattern, color_distance_threshold):
-        device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-        height, width = image_np.shape[:2]
-        
-        # テンソルに変換し、正規化
-        image_tensor = torch.from_numpy(image_np).float().to(device) / 255.0
-        palette_tensor = torch.from_numpy(palette_np).float().to(device) / 255.0
-        
-        # LAB色空間に変換
-        image_pixels = image_tensor.reshape(-1, 3)
-        image_lab = self.rgb_to_lab_batch(image_pixels)
-        palette_lab = self.rgb_to_lab_batch(palette_tensor)
-        
-        # 各ピクセルに対する全パレット色との距離を計算
-        distances = torch.cdist(image_lab, palette_lab)  # shape: [num_pixels, num_palette_colors]
-        
-        # 最も近い2つのパレット色のインデックスを取得
-        values, indices = torch.topk(distances, k=2, largest=False, dim=1)  # [num_pixels, 2]
-        
-        # c1: 最も近い色, c2: 2番目に近い色
-        c1 = palette_lab[indices[:, 0]]  # [num_pixels, 3]
-        c2 = palette_lab[indices[:, 1]]  # [num_pixels, 3]
-        
-        # ピクセルの輝度を取得
-        pixel_L = image_lab[:, 0]  # [num_pixels]
-        
-        # c1とc2の輝度を取得
-        c1_L = c1[:, 0]  # [num_pixels]
-        c2_L = c2[:, 0]  # [num_pixels]
-        
-        # c1_Lがc2_L以下となるようにソート
-        swap_mask = c1_L > c2_L  # [num_pixels]
-        c1_L_sorted = c1_L.clone()
-        c2_L_sorted = c2_L.clone()
-        c1_L_sorted[swap_mask] = c2_L[swap_mask]
-        c2_L_sorted[swap_mask] = c1_L[swap_mask]
-        indices_sorted = indices.clone()
-        indices_sorted[swap_mask, 0] = indices[swap_mask, 1]
-        indices_sorted[swap_mask, 1] = indices[swap_mask, 0]
-        
-        # ソート後の値を更新
-        c1_L = c1_L_sorted
-        c2_L = c2_L_sorted
-        indices = indices_sorted
-        
-        # Compute distance between image pixels and c1
-        pixel_to_c1_distance = torch.norm(image_lab - c1, dim=1)
-        
-        # Determine pixels that are close enough (no dithering needed)
-        no_dither_mask = pixel_to_c1_distance <= color_distance_threshold  # [num_pixels] bool
-        
-        # Determine pixels that need dithering
-        apply_dither_mask = ~no_dither_mask  # [num_pixels] bool
-
-
-        # ベイヤー行列の作成とタイリング
-        if dither_pattern != "None":
-            bayer_matrix = self.create_bayer_matrix_tensor(dither_pattern, device)  # [n, n] in [0,1)
-            bayer_tiled = self.tile_bayer_matrix(bayer_matrix, height, width)  # [height, width]
-            bayer_flat = bayer_tiled.reshape(-1)  # [num_pixels]
-        else:
-            bayer_flat = torch.zeros(height * width, device=device)
-        
-        # 閾値の計算
-        # threshold = c1_L + (c2_L - c1_L) * bayer_value
-        threshold = c1_L + (c2_L - c1_L) * bayer_flat  # [num_pixels]
-        
-        # ディザリングマスクの生成
-        # pixel_L > threshold なら c2 を選択、それ以外は c1 を選択
-        # さらに、ディザリングを適用するピクセルに限定
-        dither_mask = (pixel_L > threshold) & apply_dither_mask  # [num_pixels] bool
-        
-        # Initialize final color indices to c1
-        final_color_indices = indices[:, 0].clone()  # [num_pixels]
-        
-        # For pixels needing dithering and where dither_mask is True, set to c2
-        final_color_indices = torch.where(dither_mask, indices[:, 1], final_color_indices)
-        
-        # For pixels not needing dithering, keep as c1
-        # Already set to c1 in final_color_indices
-        
-        # Get final colors
-        final_colors = palette_tensor[final_color_indices]  # [num_pixels, 3]
-        
-        # Reshape to image
-        dithered_image = final_colors.reshape(height, width, 3)
-        
-        return (dithered_image.cpu().numpy() * 255).astype(np.uint8)
-
 
     @staticmethod
     @torch.no_grad()
@@ -359,12 +187,85 @@ class PixydustQuantize2:
         tiled = matrix.repeat(rows, cols)
         return tiled[:height, :width]
 
+    def apply_dithering_vectorized(self, image_np, palette_np, dither_pattern, color_distance_threshold, device):
+        height, width = image_np.shape[:2]
+        
+        # Convert image and palette to GPU tensors
+        image_tensor = torch.from_numpy(image_np).float().to(device) / 255.0  # [H,W,3]
+        palette_tensor = torch.from_numpy(palette_np).float().to(device) / 255.0  # [P,3]
+        
+        # Convert to LAB color space
+        image_pixels = image_tensor.reshape(-1, 3)  # [H*W,3]
+        image_lab = self.rgb_to_lab_batch(image_pixels)  # [H*W,3]
+        palette_lab = self.rgb_to_lab_batch(palette_tensor)  # [P,3]
+        
+        # Calculate distances between each pixel and all palette colors
+        distances = torch.cdist(image_lab, palette_lab)  # [H*W,P]
+        
+        # Get two closest colors and their distances
+        distances_topk, indices_topk = torch.topk(distances, k=2, largest=False, dim=1)  # [H*W,2]
+        
+        # Get actual nearest color index and its distance
+        nearest_idx = indices_topk[:, 0]  # [H*W]
+        nearest_distance = distances_topk[:, 0]  # [H*W]
+        
+        # Get c1 and c2 colors in LAB space
+        c1 = palette_lab[indices_topk[:, 0]]  # [H*W,3]
+        c2 = palette_lab[indices_topk[:, 1]]  # [H*W,3]
+        
+        # Get luminance values
+        pixel_L = image_lab[:, 0]  # [H*W]
+        c1_L = c1[:, 0]  # [H*W]
+        c2_L = c2[:, 0]  # [H*W]
+        
+        # Sort c1 and c2 by luminance for dithering
+        swap_mask = c1_L > c2_L  # [H*W]
+        c1_L_sorted = torch.where(swap_mask, c2_L, c1_L)
+        c2_L_sorted = torch.where(swap_mask, c1_L, c2_L)
+        indices_sorted = indices_topk.clone()
+        indices_sorted[swap_mask, 0] = indices_topk[swap_mask, 1]
+        indices_sorted[swap_mask, 1] = indices_topk[swap_mask, 0]
+        
+        # Create masks for different processing paths
+        no_dither_mask = nearest_distance <= color_distance_threshold  # [H*W]
+        apply_dither_mask = ~no_dither_mask  # [H*W]
+        
+        # Generate Bayer matrix threshold for dithering
+        if dither_pattern != "None":
+            bayer_matrix = self.create_bayer_matrix_tensor(dither_pattern, device)  # [n,n]
+            bayer_tiled = self.tile_bayer_matrix(bayer_matrix, height, width)  # [H,W]
+            bayer_flat = bayer_tiled.reshape(-1)  # [H*W]
+        else:
+            bayer_flat = torch.zeros(height * width, device=device)
+        
+        # Calculate dithering threshold
+        threshold = c1_L_sorted + (c2_L_sorted - c1_L_sorted) * bayer_flat  # [H*W]
+        dither_mask = (pixel_L > threshold) & apply_dither_mask  # [H*W]
+        
+        # Initialize final color indices with nearest colors
+        final_color_indices = nearest_idx.clone()  # [H*W]
+        
+        # For pixels needing dithering, choose between sorted c1 and c2
+        dither_pixels_mask = apply_dither_mask
+        final_color_indices[dither_pixels_mask] = torch.where(
+            dither_mask[dither_pixels_mask],
+            indices_sorted[dither_pixels_mask, 1],  # Use c2 for pixels above threshold
+            indices_sorted[dither_pixels_mask, 0]   # Use c1 for pixels below threshold
+        )
+        
+        # Get final RGB colors
+        final_colors = palette_tensor[final_color_indices]  # [H*W,3]
+        
+        # Reshape to image
+        dithered_image = final_colors.reshape(height, width, 3)
+        
+        return (dithered_image.cpu().numpy() * 255).astype(np.uint8)
 
     def tensor_to_numpy(self, tensor):
-        return (tensor.cpu().numpy()[0] * 255).astype(np.uint8)
+        return (tensor.cpu().numpy() * 255).astype(np.uint8)
 
     def numpy_to_tensor(self, array):
-        return torch.from_numpy(array.astype(np.float32) / 255.0).unsqueeze(0)
+        return torch.from_numpy(array.astype(np.float32) / 255.0)
 
     def create_color_histogram(self, image):
         # NumPy配列をPIL Imageに変換
@@ -410,75 +311,11 @@ class PixydustQuantize2:
         
         return np.array(cut(lab_pixels, int(np.log2(depth))))
 
-    # # LAB Projection Dithering methods
-    # def _apply_dithering(self, image, palette, dither_pattern, color_distance_threshold):
-    #     width, height = image.size
-    #     pixels = np.array(image)
-    #     lab_pixels = color.rgb2lab(pixels / 255.0)
-    #     lab_palette = color.rgb2lab(np.array(palette) / 255.0)
-    #     tree = cKDTree(lab_palette)
-        
-    #     bayer_matrix = self._create_bayer_matrix(dither_pattern)
-        
-    #     dithered_pixels = np.zeros_like(pixels)
-        
-    #     for y in range(height):
-    #         for x in range(width):
-    #             old_color_lab = lab_pixels[y, x]
-    #             distances, indices = tree.query(old_color_lab, k=2)
-                
-    #             if distances[0] <= color_distance_threshold:
-    #                 new_color_lab = lab_palette[indices[0]]
-    #             elif bayer_matrix is not None:
-    #                 color1_lab = lab_palette[indices[0]]
-    #                 color2_lab = lab_palette[indices[1]]
-                    
-    #                 t = self._project_point_to_line_segment(old_color_lab, color1_lab, color2_lab)
-                    
-    #                 threshold = bayer_matrix[y % bayer_matrix.shape[0], x % bayer_matrix.shape[1]]
-                    
-    #                 if t < threshold:
-    #                     new_color_lab = color1_lab
-    #                 else:
-    #                     new_color_lab = color2_lab
-    #             else:
-    #                 new_color_lab = lab_palette[indices[0]]
-                
-    #             new_color_rgb = color.lab2rgb(new_color_lab.reshape(1, 1, 3)).reshape(3)
-    #             dithered_pixels[y, x] = (new_color_rgb * 255).astype(np.uint8)
-        
-    #     return Image.fromarray(dithered_pixels)
-
-    # def _create_bayer_matrix(self, pattern):
-    #     if pattern == "2x2 Bayer":
-    #         n = 2
-    #     elif pattern == "4x4 Bayer":
-    #         n = 4
-    #     elif pattern == "8x8 Bayer":
-    #         n = 8
-    #     else:
-    #         return None
-
-    #     base = np.array([[0, 2], [3, 1]])
-    #     for _ in range(int(np.log2(n)) - 1):
-    #         base = np.block([[4*base, 4*base+2], [4*base+3, 4*base+1]])
-    #     return base / (n * n)
-
-    # def _project_point_to_line_segment(self, point, line_start, line_end):
-    #     line_vec = line_end - line_start
-    #     point_vec = point - line_start
-    #     t = np.dot(point_vec, line_vec) / np.dot(line_vec, line_vec)
-    #     t = np.clip(t, 0, 1)
-    #     return t
-
-
 # Add these to your NODE_CLASS_MAPPINGS
 NODE_CLASS_MAPPINGS = {
-    "PixydustQuantize1": PixydustQuantize1,
-    "PixydustQuantize2": PixydustQuantize2,
+    "Quantizer": Quantizer,
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
-    "PixydustQuantize1": "Pixydust Quantize-1",
-    "PixydustQuantize2": "Pixydust Quantize-2",
+    "Quantizer": "Pixydust Quantizer",
 }
