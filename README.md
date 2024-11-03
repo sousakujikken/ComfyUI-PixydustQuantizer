@@ -20,6 +20,10 @@ Additionally, it includes a CRT-like effect node that mimics the phosphor glow a
 ![Sample Image of Pixydust Quantizer](images/CRT_sample1.png)
 ![Sample Image of Pixydust Quantizer](images/CRT_sample2.png)
 
+- Quantize and CRT Effect Sample Video
+
+![Sample Image of Pixydust Quantizer](images/CRT_mov_001.gif)
+
 ## Features and Concept
 
 - Simplified recreation of tile patterns used in 1990s 16-color PC graphics
@@ -52,36 +56,35 @@ The name "Pixydust" combines "pixy" (as in pixel art) and "dust" (to suggest a g
 
 ## Usage
 
-### PixydustQuantize1 (Primary Color Reduction Node)
-
-This node reduces the colors of an input image using the specified method and maximum number of colors.
-
+### Pixydust Quantizer (Color Reduction and Optimization Node)
+This node provides comprehensive color reduction and optimization in a single step, streamlining the process that previously required two separate nodes. It handles both initial color reduction and subsequent palette optimization with dithering.
 Inputs:
-- `image`: Input image
-- `color_reduction_method`: Choose from "Pillow Quantize", "K-Means", or "MedianCut"
-- `max_colors`: Maximum number of colors after reduction
+
+- image: Input image or batch of images
+- color_reduction_method: Choose from "K-Means" or "MedianCut"
+- max_colors: Maximum number of colors for initial reduction ([2,4,8,16,32,64,96,128,192,256])
+- fixed_colors: Number of colors in the optimized palette ([2,4,6,8,12,16,24,32,64,96,128,192,256])
+- dither_pattern: Choose from "None", "2x2 Bayer", "4x4 Bayer", or "8x8 Bayer"
+- color_distance_threshold: Threshold for using tile patterns (0.0 to 10.0)
+- batch_mode: Choose between "All Batches" or "Single Batch"
+- batch_index: Select specific batch index when in "Single Batch" mode
+- max_batch_size: Control memory usage by setting maximum images to process at once
+- palette_tensor (optional): External palette input for maintaining consistency across images
 
 Outputs:
-- `Reduced Color Image`: Image with reduced colors
-- `Palette Preview`: Preview of the color palette used
-- `Palette Tensor`: Color palette in tensor format
 
-### PixydustQuantize2 (Palette Optimization Node)
+- Optimized Image: Final image(s) with optimized palette and dithering applied
+- Color Histogram: Visual representation of color distribution
+- Fixed Palette: Optimized color palette in tensor format
 
-This node optimizes the palette of a color-reduced image and applies dithering. It assigns palette colors based on the proportion of each color used in the image to avoid tile patterning in prominent areas like a character’s face.
+Batch Processing Features
 
-Inputs:
-- `reduced_image`: Input image with reduced colors
-- `fixed_colors`: Number of colors in the optimized palette
-- `reduction_method`: Choose from "K-Means" or "MedianCut"
-- `dither_pattern`: Choose from "None", "2x2 Bayer", "4x4 Bayer", or "8x8 Bayer"
-- `color_distance_threshold`: Threshold for using tile patterns
-- `palette_tensor` (optional): External palette input for videos
-
-Outputs:
-- `Optimized Image`: Image with optimized palette and dithering applied
-- `Color Histogram`: Color histogram of the optimized image
-- `Fixed Palette`: Optimized color palette in tensor format
+- Supports processing of image sequences or video frames as batch inputs
+- Maintains consistent palette across all frames when using external palette input
+- Process entire batches at once while managing memory efficiently with max_batch_size
+- Option to process individual frames using "Single Batch" mode
+- Output can be directly used for video creation by combining the processed frames
+- Preserves batch structure in output, making it compatible with video export workflows
 
 ### CRTLikeEffect (CRT Simulation Node)
 
@@ -104,11 +107,11 @@ Note: The output image dimensions are 4x larger than the input (both width and h
 
 ## Example Workflow
 
-1. Color Quantization Step:
-   1. Load an image
-   2. Connect the image to the Pixydust Quantize-1
-   3. Connect the output of the ColorReducerNode to the Pixydust Quantize-2
-   4. Save or display the resulting optimized image
+1. Basic Image Processing:
+   1. Load an image or batch of images
+   2. Connect to the Pixydust Quantizer node
+   3. Adjust parameters for desired retro appearance
+   4. Save or display the resulting optimized image(s)
 
 2. CRT-Like Effect Step:
    1. Connect any image to the "image" input of the CRTLike Effect node 
@@ -117,14 +120,34 @@ Note: The output image dimensions are 4x larger than the input (both width and h
       - Simulates the appearance of old CRT displays
       - Adjustable parameters for fine-tuning the effect
 
-Note: The processing speed isn't very fast so far. It takes about 10 seconds (depending on the machine's power) to generate a 512x512 pixel image.
+![Example workflow](workflow_1.png)
 
-![Example workflow](workflow.png)
-![Example workflow](CRTLike_workflow.png)
+## Tips
+
+### How to Fix Palette Using First Frame for Video Processing
+
+To maintain consistent colors across all frames by using the palette generated from the first frame:
+
+1. Place two Pixydust Quantizer nodes in your workflow:
+   - Set the first node's `batch_mode` to "Single Batch" (this will process only the first frame)
+   - Set the second node's `batch_mode` to "All Batches" (this will process all frames)
+
+2. Load your video:
+   - Use a video loading node like VideoHelperSuite's "Load Video" node
+   - Connect the video output to both Pixydust Quantizer nodes' `image` input
+
+3. Connect the nodes:
+   - Connect the `Fixed Palette` output from the first Pixydust Quantizer to the `palette_tensor` input of the second Pixydust Quantizer.
+
+4. Process the batch images:
+   - The second Pixydust Quantizer will output a batch of processed frames
+   - All frames will use the palette generated from the first frame
+   - This ensures color consistency throughout the video
 
 ## Changelog
 - 1.0.0 (2024-10-20): Initial release
 - 1.1.0 (2024-10-27): Added support for GPU processing and implemented the CRTLikeEffect node
+- 2.0.0 (2024-11-3): Added support for batch images
 
 ## License
 
