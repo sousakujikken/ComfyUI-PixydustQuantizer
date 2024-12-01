@@ -1,377 +1,132 @@
 {
-  "last_node_id": 42,
-  "last_link_id": 66,
+  "last_node_id": 8,
+  "last_link_id": 15,
   "nodes": [
     {
-      "id": 1,
-      "type": "LoadImage",
-      "pos": [
-        280,
-        -313
-      ],
-      "size": {
-        "0": 315,
-        "1": 314
-      },
-      "flags": {},
-      "order": 0,
-      "mode": 0,
-      "outputs": [
-        {
-          "name": "IMAGE",
-          "type": "IMAGE",
-          "links": [
-            52
-          ],
-          "slot_index": 0,
-          "shape": 3
-        },
-        {
-          "name": "MASK",
-          "type": "MASK",
-          "links": null,
-          "shape": 3
-        }
-      ],
-      "properties": {
-        "Node name for S&R": "LoadImage"
-      },
-      "widgets_values": [
-        "sample_img_01.png",
-        "image"
-      ]
-    },
-    {
-      "id": 10,
+      "id": 4,
       "type": "PreviewImage",
       "pos": [
-        633,
-        -309
-      ],
-      "size": {
-        "0": 391,
-        "1": 302
-      },
-      "flags": {},
-      "order": 6,
-      "mode": 0,
-      "inputs": [
-        {
-          "name": "images",
-          "type": "IMAGE",
-          "link": 55
-        }
-      ],
-      "properties": {
-        "Node name for S&R": "PreviewImage"
-      }
-    },
-    {
-      "id": 28,
-      "type": "PreviewImage",
-      "pos": [
-        670,
-        33
+        1606,
+        477
       ],
       "size": [
-        279.19147842910013,
+        261.14813232421875,
         246
       ],
-      "flags": {},
-      "order": 7,
-      "mode": 0,
-      "inputs": [
-        {
-          "name": "images",
-          "type": "IMAGE",
-          "link": 56
-        }
-      ],
-      "properties": {
-        "Node name for S&R": "PreviewImage"
-      }
-    },
-    {
-      "id": 30,
-      "type": "LoadImage",
-      "pos": [
-        1038,
-        -321
-      ],
-      "size": {
-        "0": 330.57861328125,
-        "1": 315.923095703125
-      },
-      "flags": {},
-      "order": 1,
-      "mode": 0,
-      "outputs": [
-        {
-          "name": "IMAGE",
-          "type": "IMAGE",
-          "links": [
-            59,
-            63
-          ],
-          "slot_index": 0,
-          "shape": 3
-        },
-        {
-          "name": "MASK",
-          "type": "MASK",
-          "links": null,
-          "shape": 3
-        }
-      ],
-      "properties": {
-        "Node name for S&R": "LoadImage"
-      },
-      "widgets_values": [
-        "sample_img_02.png",
-        "image"
-      ]
-    },
-    {
-      "id": 31,
-      "type": "PreviewImage",
-      "pos": [
-        1399,
-        -314
-      ],
-      "size": {
-        "0": 391,
-        "1": 302
-      },
-      "flags": {},
-      "order": 11,
-      "mode": 0,
-      "inputs": [
-        {
-          "name": "images",
-          "type": "IMAGE",
-          "link": 62
-        }
-      ],
-      "properties": {
-        "Node name for S&R": "PreviewImage"
-      }
-    },
-    {
-      "id": 34,
-      "type": "PixydustQuantize1",
-      "pos": [
-        269,
-        46
-      ],
-      "size": {
-        "0": 317.4000244140625,
-        "1": 122
-      },
-      "flags": {},
-      "order": 2,
-      "mode": 0,
-      "inputs": [
-        {
-          "name": "image",
-          "type": "IMAGE",
-          "link": 52
-        }
-      ],
-      "outputs": [
-        {
-          "name": "Reduced Color Image",
-          "type": "IMAGE",
-          "links": [
-            53
-          ],
-          "shape": 3,
-          "slot_index": 0
-        },
-        {
-          "name": "Palette Preview",
-          "type": "IMAGE",
-          "links": null,
-          "shape": 3
-        },
-        {
-          "name": "Palette Tensor",
-          "type": "PALETTE",
-          "links": [],
-          "shape": 3,
-          "slot_index": 2
-        }
-      ],
-      "properties": {
-        "Node name for S&R": "PixydustQuantize1"
-      },
-      "widgets_values": [
-        "K-Means",
-        128
-      ]
-    },
-    {
-      "id": 35,
-      "type": "PixydustQuantize2",
-      "pos": [
-        270,
-        210
-      ],
-      "size": {
-        "0": 380.4000244140625,
-        "1": 170
-      },
       "flags": {},
       "order": 4,
       "mode": 0,
       "inputs": [
         {
-          "name": "reduced_image",
+          "name": "images",
           "type": "IMAGE",
-          "link": 53
-        },
-        {
-          "name": "palette_tensor",
-          "type": "PALETTE",
-          "link": null
+          "link": 15
         }
       ],
-      "outputs": [
-        {
-          "name": "Optimized Image",
-          "type": "IMAGE",
-          "links": [
-            55
-          ],
-          "shape": 3,
-          "slot_index": 0
-        },
-        {
-          "name": "Color Histogram",
-          "type": "IMAGE",
-          "links": [
-            56
-          ],
-          "shape": 3,
-          "slot_index": 1
-        },
-        {
-          "name": "Fixed Palette",
-          "type": "PALETTE",
-          "links": [
-            60
-          ],
-          "shape": 3,
-          "slot_index": 2
-        }
-      ],
+      "outputs": [],
       "properties": {
-        "Node name for S&R": "PixydustQuantize2"
+        "Node name for S&R": "PreviewImage",
+        "enableTabs": false,
+        "tabWidth": 65,
+        "tabXOffset": 10,
+        "hasSecondTab": false,
+        "secondTabText": "Send Back",
+        "secondTabOffset": 80,
+        "secondTabWidth": 65
       },
-      "widgets_values": [
-        16,
-        "K-Means",
-        "8x8 Bayer",
-        2
-      ]
+      "widgets_values": []
     },
     {
-      "id": 36,
-      "type": "PixydustQuantize2",
-      "pos": [
-        1037,
-        213
-      ],
-      "size": {
-        "0": 380.4000244140625,
-        "1": 170
-      },
-      "flags": {},
-      "order": 8,
-      "mode": 0,
-      "inputs": [
-        {
-          "name": "reduced_image",
-          "type": "IMAGE",
-          "link": 59
-        },
-        {
-          "name": "palette_tensor",
-          "type": "PALETTE",
-          "link": 60
-        }
-      ],
-      "outputs": [
-        {
-          "name": "Optimized Image",
-          "type": "IMAGE",
-          "links": [
-            62
-          ],
-          "shape": 3,
-          "slot_index": 0
-        },
-        {
-          "name": "Color Histogram",
-          "type": "IMAGE",
-          "links": [
-            61
-          ],
-          "shape": 3,
-          "slot_index": 1
-        },
-        {
-          "name": "Fixed Palette",
-          "type": "PALETTE",
-          "links": null,
-          "shape": 3
-        }
-      ],
-      "properties": {
-        "Node name for S&R": "PixydustQuantize2"
-      },
-      "widgets_values": [
-        16,
-        "K-Means",
-        "8x8 Bayer",
-        2
-      ]
-    },
-    {
-      "id": 37,
+      "id": 3,
       "type": "PreviewImage",
       "pos": [
-        1428,
-        20
+        1608,
+        -136
       ],
       "size": [
-        288.0914784291001,
-        246
+        807.35205078125,
+        567.4943237304688
       ],
       "flags": {},
-      "order": 12,
+      "order": 5,
       "mode": 0,
       "inputs": [
         {
           "name": "images",
           "type": "IMAGE",
-          "link": 61
+          "link": 14
+        }
+      ],
+      "outputs": [],
+      "properties": {
+        "Node name for S&R": "PreviewImage",
+        "enableTabs": false,
+        "tabWidth": 65,
+        "tabXOffset": 10,
+        "hasSecondTab": false,
+        "secondTabText": "Send Back",
+        "secondTabOffset": 80,
+        "secondTabWidth": 65
+      },
+      "widgets_values": []
+    },
+    {
+      "id": 5,
+      "type": "ImageScaleBy",
+      "pos": [
+        1201,
+        -203
+      ],
+      "size": [
+        315,
+        82
+      ],
+      "flags": {},
+      "order": 1,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "image",
+          "type": "IMAGE",
+          "link": 4
+        }
+      ],
+      "outputs": [
+        {
+          "name": "IMAGE",
+          "type": "IMAGE",
+          "links": [
+            5
+          ],
+          "slot_index": 0
         }
       ],
       "properties": {
-        "Node name for S&R": "PreviewImage"
-      }
+        "Node name for S&R": "ImageScaleBy",
+        "enableTabs": false,
+        "tabWidth": 65,
+        "tabXOffset": 10,
+        "hasSecondTab": false,
+        "secondTabText": "Send Back",
+        "secondTabOffset": 80,
+        "secondTabWidth": 65
+      },
+      "widgets_values": [
+        "nearest-exact",
+        0.5
+      ]
     },
     {
-      "id": 38,
-      "type": "PixydustQuantize1",
+      "id": 7,
+      "type": "CRTLikeEffectNode",
       "pos": [
-        1045,
-        431
+        1198,
+        241
       ],
-      "size": {
-        "0": 317.4000244140625,
-        "1": 122
-      },
+      "size": [
+        315,
+        226
+      ],
       "flags": {},
       "order": 3,
       "mode": 0,
@@ -379,65 +134,65 @@
         {
           "name": "image",
           "type": "IMAGE",
-          "link": 63
+          "link": 8
         }
       ],
       "outputs": [
         {
-          "name": "Reduced Color Image",
+          "name": "IMAGE",
           "type": "IMAGE",
           "links": [
-            64
+            14
           ],
-          "shape": 3,
           "slot_index": 0
-        },
-        {
-          "name": "Palette Preview",
-          "type": "IMAGE",
-          "links": null,
-          "shape": 3
-        },
-        {
-          "name": "Palette Tensor",
-          "type": "PALETTE",
-          "links": [],
-          "shape": 3,
-          "slot_index": 2
         }
       ],
       "properties": {
-        "Node name for S&R": "PixydustQuantize1"
+        "Node name for S&R": "CRTLikeEffectNode",
+        "enableTabs": false,
+        "tabWidth": 65,
+        "tabXOffset": 10,
+        "hasSecondTab": false,
+        "secondTabText": "Send Back",
+        "secondTabOffset": 80,
+        "secondTabWidth": 65
       },
       "widgets_values": [
-        "K-Means",
-        128
+        2.6,
+        1.4000000000000001,
+        5.2,
+        0.8,
+        11,
+        false,
+        256,
+        4
       ]
     },
     {
-      "id": 39,
-      "type": "PixydustQuantize2",
+      "id": 2,
+      "type": "Quantizer",
       "pos": [
-        1044,
-        596
+        1196,
+        -61
       ],
-      "size": {
-        "0": 380.4000244140625,
-        "1": 170
-      },
+      "size": [
+        380.4000244140625,
+        242
+      ],
       "flags": {},
-      "order": 5,
+      "order": 2,
       "mode": 0,
       "inputs": [
         {
           "name": "reduced_image",
           "type": "IMAGE",
-          "link": 64
+          "link": 5
         },
         {
           "name": "palette_tensor",
           "type": "PALETTE",
-          "link": null
+          "link": null,
+          "shape": 7
         }
       ],
       "outputs": [
@@ -445,183 +200,128 @@
           "name": "Optimized Image",
           "type": "IMAGE",
           "links": [
-            65
+            8
           ],
-          "shape": 3,
           "slot_index": 0
         },
         {
           "name": "Color Histogram",
           "type": "IMAGE",
           "links": [
-            66
+            15
           ],
-          "shape": 3,
           "slot_index": 1
         },
         {
           "name": "Fixed Palette",
           "type": "PALETTE",
-          "links": [],
-          "shape": 3,
-          "slot_index": 2
+          "links": null
         }
       ],
       "properties": {
-        "Node name for S&R": "PixydustQuantize2"
+        "Node name for S&R": "Quantizer",
+        "enableTabs": false,
+        "tabWidth": 65,
+        "tabXOffset": 10,
+        "hasSecondTab": false,
+        "secondTabText": "Send Back",
+        "secondTabOffset": 80,
+        "secondTabWidth": 65
       },
       "widgets_values": [
-        16,
+        24,
         "K-Means",
         "8x8 Bayer",
-        2
+        2,
+        "Single Batch",
+        0,
+        4
       ]
     },
     {
-      "id": 41,
-      "type": "PreviewImage",
+      "id": 1,
+      "type": "LoadImage",
       "pos": [
-        1439,
-        311
-      ],
-      "size": {
-        "0": 391,
-        "1": 302
-      },
-      "flags": {},
-      "order": 9,
-      "mode": 0,
-      "inputs": [
-        {
-          "name": "images",
-          "type": "IMAGE",
-          "link": 65
-        }
-      ],
-      "properties": {
-        "Node name for S&R": "PreviewImage"
-      }
-    },
-    {
-      "id": 42,
-      "type": "PreviewImage",
-      "pos": [
-        1441,
-        657
+        369,
+        -196
       ],
       "size": [
-        288.09149169921875,
-        246
+        785.9441528320312,
+        625.87109375
       ],
       "flags": {},
-      "order": 10,
+      "order": 0,
       "mode": 0,
-      "inputs": [
+      "inputs": [],
+      "outputs": [
         {
-          "name": "images",
+          "name": "IMAGE",
           "type": "IMAGE",
-          "link": 66
+          "links": [
+            4
+          ],
+          "slot_index": 0
+        },
+        {
+          "name": "MASK",
+          "type": "MASK",
+          "links": null
         }
       ],
       "properties": {
-        "Node name for S&R": "PreviewImage"
-      }
+        "Node name for S&R": "LoadImage",
+        "enableTabs": false,
+        "tabWidth": 65,
+        "tabXOffset": 10,
+        "hasSecondTab": false,
+        "secondTabText": "Send Back",
+        "secondTabOffset": 80,
+        "secondTabWidth": 65
+      },
+      "widgets_values": [
+        "ComfyUI_temp_ezcxs_00032_.png",
+        "image"
+      ]
     }
   ],
   "links": [
     [
-      52,
+      4,
       1,
       0,
-      34,
+      5,
       0,
       "IMAGE"
     ],
     [
-      53,
-      34,
+      5,
+      5,
       0,
-      35,
-      0,
-      "IMAGE"
-    ],
-    [
-      55,
-      35,
-      0,
-      10,
-      0,
-      "IMAGE"
-    ],
-    [
-      56,
-      35,
-      1,
-      28,
-      0,
-      "IMAGE"
-    ],
-    [
-      59,
-      30,
-      0,
-      36,
-      0,
-      "IMAGE"
-    ],
-    [
-      60,
-      35,
       2,
-      36,
+      0,
+      "IMAGE"
+    ],
+    [
+      8,
+      2,
+      0,
+      7,
+      0,
+      "IMAGE"
+    ],
+    [
+      14,
+      7,
+      0,
+      3,
+      0,
+      "IMAGE"
+    ],
+    [
+      15,
+      2,
       1,
-      "PALETTE"
-    ],
-    [
-      61,
-      36,
-      1,
-      37,
-      0,
-      "IMAGE"
-    ],
-    [
-      62,
-      36,
-      0,
-      31,
-      0,
-      "IMAGE"
-    ],
-    [
-      63,
-      30,
-      0,
-      38,
-      0,
-      "IMAGE"
-    ],
-    [
-      64,
-      38,
-      0,
-      39,
-      0,
-      "IMAGE"
-    ],
-    [
-      65,
-      39,
-      0,
-      41,
-      0,
-      "IMAGE"
-    ],
-    [
-      66,
-      39,
-      1,
-      42,
+      4,
       0,
       "IMAGE"
     ]
@@ -630,10 +330,10 @@
   "config": {},
   "extra": {
     "ds": {
-      "scale": 0.8264462809917354,
+      "scale": 0.9090909090909091,
       "offset": [
-        -12.929311204826945,
-        424.3436514034428
+        -476.8328366200035,
+        315.1027383405716
       ]
     }
   },
