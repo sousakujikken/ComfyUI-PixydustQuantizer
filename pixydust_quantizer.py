@@ -9,6 +9,15 @@ from sklearn.cluster import KMeans
 from skimage import color
 import math
 
+def get_device():
+    """Get the most appropriate device for computation."""
+    if torch.cuda.is_available():
+        return torch.device('cuda')
+    elif hasattr(torch.backends, 'mps') and torch.backends.mps.is_available():
+        return torch.device('mps')
+    else:
+        return torch.device('cpu')
+
 class Quantizer:
     @classmethod
     def INPUT_TYPES(s):
@@ -36,33 +45,30 @@ class Quantizer:
     def optimize_palette(self, reduced_image, fixed_colors, reduction_method, dither_pattern, 
                         color_distance_threshold, batch_mode, batch_index, max_batch_size, 
                         palette_tensor=None):
-        device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        device = get_device()
+        print(f"Using device: {device}")
         
         # Convert input image to numpy array
-        image_np = self.tensor_to_numpy(reduced_image)  # [B,H,W,3]
+        image_np = self.tensor_to_numpy(reduced_image)
         batch_size = image_np.shape[0]
         
-        # Handle single batch mode
         if batch_mode == "Single Batch":
             if batch_index >= batch_size:
                 raise ValueError(f"Batch index {batch_index} is out of range for batch size {batch_size}")
-            image_np = image_np[batch_index:batch_index+1]  # Select only the specified batch
+            image_np = image_np[batch_index:batch_index+1]
             batch_size = 1
         
-        # Generate or use provided palette (done once before batch processing)
         if palette_tensor is not None:
             print("Using provided palette tensor for all batches")
             palette_np = (palette_tensor.cpu().numpy() * 255).astype(np.uint8)
         else:
             print("Generating palette from first batch")
-            palette_np = self.generate_fixed_palette(image_np[0], fixed_colors, reduction_method)
-            print("Palette generation complete. Using this palette for all batches")
+            palette_np = self.generate_fixed_palette(image_np[0], fixed_colors, reduction_method, device)
+            print("Palette generation complete")
 
-        # Initialize result containers
         dithered_images = []
         histogram_images = []
         
-        # Process batches with size limitation
         num_iterations = math.ceil(batch_size / max_batch_size)
         for iteration in range(num_iterations):
             start_idx = iteration * max_batch_size
@@ -71,64 +77,165 @@ class Quantizer:
             
             print(f"Processing batch {iteration + 1}/{num_iterations} (frames {start_idx}-{end_idx-1})")
             
-            # Process each image in the current batch
             for img in current_batch:
-                # Process single image
-                dithered = self.apply_dithering_vectorized(
-                    img,
-                    palette_np,
-                    dither_pattern,
-                    color_distance_threshold,
-                    device
-                )
-                dithered_images.append(dithered)
-                
-                # Generate histogram
-                histogram = self.create_color_histogram(dithered)
-                histogram_images.append(histogram)
+                try:
+                    dithered = self.apply_dithering_vectorized(
+                        img,
+                        palette_np,
+                        dither_pattern,
+                        color_distance_threshold,
+                        device
+                    )
+                    dithered_images.append(dithered)
+                    
+                    histogram = self.create_color_histogram(dithered)
+                    histogram_images.append(histogram)
+                except Exception as e:
+                    print(f"Error processing image in batch: {e}")
+                    # Fallback to CPU processing if device-specific processing fails
+                    dithered = self.apply_dithering_cpu(
+                        img,
+                        palette_np,
+                        dither_pattern,
+                        color_distance_threshold
+                    )
+                    dithered_images.append(dithered)
+                    histogram = self.create_color_histogram(dithered)
+                    histogram_images.append(histogram)
             
-            # Clear CUDA cache after each batch
-            torch.cuda.empty_cache()
+            # Clear device cache if available
+            if device.type == 'cuda':
+                torch.cuda.empty_cache()
+            elif device.type == 'mps':
+                torch.mps.empty_cache()
         
-        # Stack results
         dithered_batch = np.stack(dithered_images, axis=0)
         histogram_batch = np.stack(histogram_images, axis=0)
         
-        # If in single batch mode, return only the processed batch
         if batch_mode == "Single Batch":
             if dithered_batch.shape[0] > 1:
-                dithered_batch = dithered_batch[0:1]  # Keep only first batch
-                histogram_batch = histogram_batch[0:1]  # Keep only first batch
+                dithered_batch = dithered_batch[0:1]
+                histogram_batch = histogram_batch[0:1]
         
-        # Convert results to tensors
         return (
             self.numpy_to_tensor(dithered_batch),
             self.numpy_to_tensor(histogram_batch),
             torch.tensor(palette_np).float() / 255.0
         )
 
-    def generate_fixed_palette(self, image_np, fixed_colors, reduction_method):
-        # Reshape image to 2D array of pixels
-        pixels = image_np.reshape(-1, 3)
+    def apply_dithering_cpu(self, image_np, palette_np, dither_pattern, color_distance_threshold):
+        """CPU-based fallback implementation of dithering"""
+        height, width = image_np.shape[:2]
+        image_pixels = image_np.reshape(-1, 3).astype(np.float32) / 255.0
+        palette_pixels = palette_np.astype(np.float32) / 255.0
         
-        # Convert to LAB color space
-        with torch.no_grad():
-            pixels_tensor = torch.from_numpy(pixels).float().cuda() / 255.0
-            lab_pixels = self.rgb_to_lab_batch(pixels_tensor)
+        # Convert to LAB color space using numpy operations
+        image_lab = color.rgb2lab(image_pixels.reshape(1, -1, 3)).reshape(-1, 3)
+        palette_lab = color.rgb2lab(palette_pixels.reshape(1, -1, 3)).reshape(-1, 3)
         
-        if reduction_method == "K-Means":
-            kmeans = KMeans(n_clusters=fixed_colors, random_state=42, n_init=1)
-            kmeans.fit(lab_pixels.cpu().numpy())
-            centers = kmeans.cluster_centers_
-        else:  # MedianCut
-            centers = self._median_cut_lab(lab_pixels.cpu().numpy(), fixed_colors)
+        # Calculate distances
+        distances = np.zeros((len(image_lab), len(palette_lab)))
+        for i, pixel in enumerate(image_lab):
+            distances[i] = np.sqrt(np.sum((palette_lab - pixel) ** 2, axis=1))
         
-        # Convert centers back to RGB
-        with torch.no_grad():
-            centers_tensor = torch.from_numpy(centers).float().cuda()
-            rgb_centers = self.lab_to_rgb_batch(centers_tensor)
+        # Get two closest colors
+        indices = np.argsort(distances, axis=1)[:, :2]
+        nearest_distances = np.take_along_axis(distances, indices, axis=1)
         
-        return (rgb_centers.cpu().numpy() * 255).astype(np.uint8)
+        # Initialize output array
+        output = np.zeros_like(image_np)
+        
+        # Apply dithering based on pattern
+        if dither_pattern != "None":
+            bayer_matrix = self.create_bayer_matrix_numpy(dither_pattern)
+            bayer_tiled = np.tile(bayer_matrix, 
+                                (math.ceil(height/bayer_matrix.shape[0]),
+                                 math.ceil(width/bayer_matrix.shape[1])))[:height, :width]
+            
+            for y in range(height):
+                for x in range(width):
+                    pixel_idx = y * width + x
+                    if nearest_distances[pixel_idx, 0] <= color_distance_threshold:
+                        output[y, x] = palette_np[indices[pixel_idx, 0]]
+                    else:
+                        threshold = bayer_tiled[y, x]
+                        color_idx = indices[pixel_idx, 1] if threshold > 0.5 else indices[pixel_idx, 0]
+                        output[y, x] = palette_np[color_idx]
+        else:
+            # No dithering, just use nearest color
+            output = palette_np[indices[:, 0]].reshape(height, width, 3)
+            
+        return output
+
+    def create_bayer_matrix_numpy(self, pattern):
+        """Create Bayer matrix patterns using numpy"""
+        if pattern == "2x2 Bayer":
+            return np.array([[0, 2], [3, 1]]) / 4.0
+        elif pattern == "4x4 Bayer":
+            return np.array([
+                [0, 8, 2, 10],
+                [12, 4, 14, 6],
+                [3, 11, 1, 9],
+                [15, 7, 13, 5]
+            ]) / 16.0
+        else:  # "8x8 Bayer"
+            return np.array([
+                [0, 32, 8, 40, 2, 34, 10, 42],
+                [48, 16, 56, 24, 50, 18, 58, 26],
+                [12, 44, 4, 36, 14, 46, 6, 38],
+                [60, 28, 52, 20, 62, 30, 54, 22],
+                [3, 35, 11, 43, 1, 33, 9, 41],
+                [51, 19, 59, 27, 49, 17, 57, 25],
+                [15, 47, 7, 39, 13, 45, 5, 37],
+                [63, 31, 55, 23, 61, 29, 53, 21]
+            ]) / 64.0
+
+    def generate_fixed_palette(self, image_np, fixed_colors, reduction_method, device):
+        try:
+            pixels = image_np.reshape(-1, 3)
+            pixels_tensor = torch.from_numpy(pixels).float().to(device) / 255.0
+            
+            if device.type != 'cpu':
+                try:
+                    lab_pixels = self.rgb_to_lab_batch(pixels_tensor, device=device)
+                except Exception as e:
+                    print(f"Error in device-specific color conversion: {e}")
+                    # Fallback to CPU
+                    lab_pixels = color.rgb2lab(pixels.reshape(-1, 3) / 255.0)
+            else:
+                lab_pixels = color.rgb2lab(pixels.reshape(-1, 3) / 255.0)
+
+            if reduction_method == "K-Means":
+                kmeans = KMeans(n_clusters=fixed_colors, random_state=42, n_init=1)
+                kmeans.fit(lab_pixels if isinstance(lab_pixels, np.ndarray) else lab_pixels.cpu().numpy())
+                centers = kmeans.cluster_centers_
+            else:
+                centers = self._median_cut_lab(
+                    lab_pixels if isinstance(lab_pixels, np.ndarray) else lab_pixels.cpu().numpy(), 
+                    fixed_colors
+                )
+
+            centers_tensor = torch.from_numpy(centers).float().to(device)
+            if device.type != 'cpu':
+                try:
+                    rgb_centers = self.lab_to_rgb_batch(centers_tensor, device=device)
+                except Exception as e:
+                    print(f"Error in device-specific color conversion: {e}")
+                    # Fallback to CPU
+                    rgb_centers = torch.from_numpy(
+                        color.lab2rgb(centers.reshape(-1, 3)).reshape(-1, 3)
+                    ).float()
+            else:
+                rgb_centers = torch.from_numpy(
+                    color.lab2rgb(centers.reshape(-1, 3)).reshape(-1, 3)
+                ).float()
+
+            return (rgb_centers.cpu().numpy() * 255).astype(np.uint8)
+        
+        except Exception as e:
+            print(f"Error in palette generation: {e}")
+            # Fallback to simple color reduction
+            return self._simple_color_reduction(image_np, fixed_colors)
 
     @staticmethod
     @torch.no_grad()
@@ -311,6 +418,13 @@ class Quantizer:
         
         return np.array(cut(lab_pixels, int(np.log2(depth))))
 
+    def _simple_color_reduction(self, image_np, fixed_colors):
+        """Simple color reduction fallback method"""
+        pixels = image_np.reshape(-1, 3)
+        kmeans = KMeans(n_clusters=fixed_colors, random_state=42, n_init=1)
+        kmeans.fit(pixels)
+        return kmeans.cluster_centers_.astype(np.uint8)
+    
 # Add these to your NODE_CLASS_MAPPINGS
 NODE_CLASS_MAPPINGS = {
     "Quantizer": Quantizer,
