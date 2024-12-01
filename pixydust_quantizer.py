@@ -10,13 +10,11 @@ from skimage import color
 import math
 
 def get_device():
-    """Get the most appropriate device for computation."""
     if torch.cuda.is_available():
         return torch.device('cuda')
     elif hasattr(torch.backends, 'mps') and torch.backends.mps.is_available():
         return torch.device('mps')
-    else:
-        return torch.device('cpu')
+    return torch.device('cpu')
 
 class Quantizer:
     @classmethod
@@ -424,7 +422,176 @@ class Quantizer:
         kmeans = KMeans(n_clusters=fixed_colors, random_state=42, n_init=1)
         kmeans.fit(pixels)
         return kmeans.cluster_centers_.astype(np.uint8)
-    
+        
+class MPSCompatibleQuantizer:
+    @staticmethod
+    def rgb_to_perceptual_weights(rgb_tensor):
+        """
+        RGB値から知覚的な重みを計算
+        YUV変換の輝度成分の係数を利用
+        """
+        weights = torch.tensor([0.299, 0.587, 0.114], device=rgb_tensor.device)
+        return (rgb_tensor * weights.view(1, 3)).sum(dim=1, keepdim=True)
+
+    @staticmethod
+    def calculate_color_distance(colors1, colors2, device):
+        """
+        知覚的な重みを考慮した色距離の計算
+        """
+        # RGB各成分の差分を計算
+        diff = colors1.unsqueeze(1) - colors2.unsqueeze(0)
+        
+        # 知覚的な重みを適用
+        weights = torch.tensor([0.299, 0.587, 0.114], device=device).view(1, 1, 3)
+        weighted_diff = diff * weights
+        
+        # ユークリッド距離を計算
+        return torch.sqrt((weighted_diff ** 2).sum(dim=2))
+
+    def cluster_colors(self, pixels, n_colors, device):
+        """
+        k-means++に基づく独自のカラークラスタリング実装
+        """
+        # 初期クラスタ中心をk-means++で選択
+        centers = self.kmeans_pp_initialization(pixels, n_colors, device)
+        
+        max_iterations = 100
+        prev_centers = None
+        
+        for _ in range(max_iterations):
+            # 各ピクセルと全クラスタ中心との距離を計算
+            distances = self.calculate_color_distance(pixels, centers, device)
+            
+            # 最も近いクラスタを割り当て
+            labels = torch.argmin(distances, dim=1)
+            
+            # クラスタ中心を更新
+            new_centers = torch.zeros_like(centers)
+            for i in range(n_colors):
+                mask = (labels == i)
+                if mask.any():
+                    new_centers[i] = pixels[mask].mean(dim=0)
+                else:
+                    new_centers[i] = centers[i]
+            
+            # 収束判定
+            if prev_centers is not None and torch.allclose(centers, new_centers, rtol=1e-4):
+                break
+                
+            centers = new_centers
+            prev_centers = centers
+        
+        return centers, labels
+
+    def kmeans_pp_initialization(self, pixels, n_colors, device):
+        """
+        k-means++によるクラスタ中心の初期化
+        """
+        n_pixels = pixels.shape[0]
+        centers = torch.zeros((n_colors, 3), device=device)
+        
+        # 最初のクラスタ中心をランダムに選択
+        first_center_idx = torch.randint(0, n_pixels, (1,))
+        centers[0] = pixels[first_center_idx]
+        
+        # 残りのクラスタ中心を選択
+        for i in range(1, n_colors):
+            # 各ピクセルと既存クラスタ中心との最小距離を計算
+            distances = self.calculate_color_distance(pixels, centers[:i], device)
+            min_distances = torch.min(distances, dim=1)[0]
+            
+            # 距離の二乗を確率として使用
+            probabilities = min_distances ** 2
+            probabilities /= probabilities.sum()
+            
+            # 新しいクラスタ中心を選択
+            next_center_idx = torch.multinomial(probabilities, 1)
+            centers[i] = pixels[next_center_idx]
+        
+        return centers
+
+    def create_bayer_pattern(self, pattern_type, device):
+        """
+        ベイヤーパターンの生成（変更なし）
+        """
+        if pattern_type == "2x2 Bayer":
+            matrix = torch.tensor([
+                [0, 2],
+                [3, 1]
+            ], device=device, dtype=torch.float32) / 4.0
+        elif pattern_type == "4x4 Bayer":
+            matrix = torch.tensor([
+                [0,  8,  2,  10],
+                [12, 4,  14, 6],
+                [3,  11, 1,  9],
+                [15, 7,  13, 5]
+            ], device=device, dtype=torch.float32) / 16.0
+        else:  # 8x8 Bayer
+            matrix = torch.tensor([
+                [ 0, 32,  8, 40,  2, 34, 10, 42],
+                [48, 16, 56, 24, 50, 18, 58, 26],
+                [12, 44,  4, 36, 14, 46,  6, 38],
+                [60, 28, 52, 20, 62, 30, 54, 22],
+                [ 3, 35, 11, 43,  1, 33,  9, 41],
+                [51, 19, 59, 27, 49, 17, 57, 25],
+                [15, 47,  7, 39, 13, 45,  5, 37],
+                [63, 31, 55, 23, 61, 29, 53, 21]
+            ], device=device, dtype=torch.float32) / 64.0
+            
+        return matrix
+
+    def apply_dithering(self, image, palette, dither_pattern, threshold, device):
+        """
+        ディザリングの適用
+        """
+        height, width = image.shape[:2]
+        image_tensor = torch.from_numpy(image).float().to(device) / 255.0
+        palette_tensor = torch.from_numpy(palette).float().to(device) / 255.0
+        
+        # 画像をピクセル配列に変換
+        pixels = image_tensor.reshape(-1, 3)
+        
+        # 各ピクセルと全パレット色との距離を計算
+        distances = self.calculate_color_distance(pixels, palette_tensor, device)
+        
+        # 2つの最も近い色を取得
+        distances_values, indices = torch.topk(distances, k=2, largest=False, dim=1)
+        
+        # ディザリングパターンの生成
+        if dither_pattern != "None":
+            bayer_matrix = self.create_bayer_pattern(dither_pattern, device)
+            pattern = self.tile_pattern(bayer_matrix, height, width).reshape(-1)
+            
+            # 知覚的な輝度に基づいて色の順序を決定
+            color1 = palette_tensor[indices[:, 0]]
+            color2 = palette_tensor[indices[:, 1]]
+            lum1 = self.rgb_to_perceptual_weights(color1)
+            lum2 = self.rgb_to_perceptual_weights(color2)
+            
+            # 輝度が低い色を color1 に設定
+            swap_mask = lum1 > lum2
+            indices[swap_mask] = indices[swap_mask].flip(1)
+            
+            # ディザリングの適用
+            use_second_color = pattern > threshold
+            final_indices = torch.where(use_second_color, indices[:, 1], indices[:, 0])
+        else:
+            final_indices = indices[:, 0]
+        
+        # 最終的な色の割り当て
+        result = palette_tensor[final_indices].reshape(height, width, 3)
+        
+        return (result.cpu().numpy() * 255).astype(np.uint8)
+
+    def tile_pattern(self, pattern, height, width):
+        """
+        パターンを画像サイズにタイリング
+        """
+        ph, pw = pattern.shape
+        rows = math.ceil(height / ph)
+        cols = math.ceil(width / pw)
+        return pattern.repeat(rows, cols)[:height, :width]
+
 # Add these to your NODE_CLASS_MAPPINGS
 NODE_CLASS_MAPPINGS = {
     "Quantizer": Quantizer,
