@@ -149,6 +149,7 @@ To maintain consistent colors across all frames by using the palette generated f
 - 1.0.0 (2024-10-20): Initial release
 - 1.1.0 (2024-10-27): Added support for GPU processing and implemented the CRTLikeEffect node
 - 2.0.0 (2024-11-3): Added support for batch images
+- 2.1.0 (2024-12-1): Added support for MPS
 
 ## License
 
