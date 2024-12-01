@@ -1,6 +1,7 @@
 # Copyright (c) 2024 Sousakujikken HIRO
 # This software is released under the MIT License.
 # https://opensource.org/licenses/MIT
+# v2.1.0
 
 import numpy as np
 import torch
@@ -46,6 +47,7 @@ class Quantizer:
                         color_distance_threshold, batch_mode, batch_index, max_batch_size, 
                         palette_tensor=None):
         device = get_device()
+        print("Pixydust Quantizer v2.1.0")
         print(f"Using device: {device}")
         
         # Convert input image to numpy array
