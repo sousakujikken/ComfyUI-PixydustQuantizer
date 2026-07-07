@@ -45,12 +45,12 @@ The name "Pixydust" combines "pixy" (as in pixel art) and "dust" (to suggest a g
 
 2. Clone this repository:
    ```
-   git clone https://github.com/yourusername/ComfyUI-Pixydust-Quantizer.git
+   git clone https://github.com/yourusername/ComfyUI-PixydustQuantizer.git
    ```
 
 3. Install the required dependencies:
    ```
-   pip install -r ComfyUI-Pixydust-Quantizer/requirements.txt
+   pip install -r ComfyUI-PixydustQuantizer/requirements.txt
    ```
 
 4. Restart ComfyUI
